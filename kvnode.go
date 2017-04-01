@@ -41,7 +41,22 @@ var (
 	listenKVNodeIpPort string
 	listenClientIpPort string
 	nextTransactionID int
+	transactions map[int]Transaction 
+	keyValueStore map[Key]Value
 )
+
+// Represents a key in the system.
+type Key string
+
+// Represent a value in the system.
+type Value string
+
+type Transaction struct {
+	TxID int
+	PutSet map[Key]Value
+	IsAborted bool
+	IsCommited bool
+}
 
 type KVServer int
 
@@ -57,14 +72,19 @@ func main() {
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
 	nextTransactionID = 10
+	transactions = make(map[int]Transaction)
+	keyValueStore = make(map[Key]Value)
 
 	listenClientRPCs()
 }
 
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
-	*resp = NewTransactionResp{nextTransactionID}
+	txID := nextTransactionID
 	nextTransactionID += 10
+	tx := Transaction{txID, make(map[Key]Value), false, false}
+	transactions[txID] = tx
+	*resp = NewTransactionResp{txID}
 	return nil
 }
 
