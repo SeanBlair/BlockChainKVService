@@ -77,4 +77,5 @@ type tx interface {
 // node ip:port strings.
 func NewConnection(nodes []string) connection {
 	// TODO
+	return nil
 }
