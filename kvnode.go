@@ -27,6 +27,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
+	"net/rpc"
 	"os"
 	"strconv"
 )
@@ -38,7 +40,14 @@ var (
 	myNodeID int 
 	listenKVNodeIpPort string
 	listenClientIpPort string
+	nextTransactionID int
 )
+
+type KVServer int
+
+type NewTransactionResp struct {
+	TxID int
+}
 
 func main() {
 	err := ParseArguments()
@@ -46,6 +55,31 @@ func main() {
 	fmt.Println("KVNode's command line arguments are:\ngenesisHash:", genesisHash, 
 		"numLeadingZeroes:", numLeadingZeroes, "nodesFilePath:", nodesFilePath, "myNodeID:", myNodeID, 
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
+
+	nextTransactionID = 10
+
+	listenClientRPCs()
+}
+
+func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
+	fmt.Println("Received a call to NewTransaction()")
+	*resp = NewTransactionResp{nextTransactionID}
+	nextTransactionID += 10
+	return nil
+}
+
+func listenClientRPCs() {
+	kvServer := rpc.NewServer()
+	kv := new(KVServer)
+	kvServer.Register(kv)
+	l, err := net.Listen("tcp", listenClientIpPort)
+	checkError("Error in listenClientRPCs(), net.Listen()", err, true)
+	fmt.Println("Listening for client RPC calls on:", listenClientIpPort)
+	for {
+		conn, err := l.Accept()
+		checkError("Error in listenClientRPCs(), l.Accept()", err, true)
+		kvServer.ServeConn(conn)
+	}
 }
 
 // Parses and sets the command line arguments to kvnode.go as global variables

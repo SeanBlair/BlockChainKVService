@@ -9,6 +9,9 @@ package kvservice
 
 import (
 	"fmt"
+	"log"
+	"net/rpc"
+	"os"
 )
 
 
@@ -87,6 +90,10 @@ type mytx struct {
 	ID int
 }
 
+type NewTransactionResp struct {
+	TxID int
+}
+
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
 // node ip:port strings.
@@ -106,7 +113,15 @@ func (c *myconn) NewTX() (tx, error) {
 }
 
 func getNewTransactionID() int {
-	return 7
+	kvnodeIpPort := kvnodeIpPorts[0]
+	var resp NewTransactionResp
+	client, err := rpc.Dial("tcp", kvnodeIpPort)
+	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.NewTransaction", true, &resp)
+	checkError("Error in getNewTransactionID(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in getNewTransactionID(), client.Close():", err, true)
+	return resp.TxID
 }
 
 func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
@@ -117,8 +132,6 @@ func (c *myconn) GetChildren(node string, parentHash string) (children []string)
 func (c *myconn) Close() {
 	fmt.Println("kvservice received a call to Close()")
 }
-
-
 
 func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 	fmt.Println("kvservice received a call to Get(", k, ")")
@@ -137,4 +150,14 @@ func (t *mytx) Commit(validateNum int) (success bool, txID int, err error) {
 
 func (t *mytx) Abort() {
 	fmt.Println("kvservice received a call to Abort()")
+}
+
+// Prints msg + err to console and exits program if exit == true
+func checkError(msg string, err error, exit bool) {
+	if err != nil {
+		log.Println(msg, err)
+		if exit {
+			os.Exit(-1)
+		}
+	}
 }
