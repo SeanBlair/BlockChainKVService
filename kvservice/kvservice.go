@@ -7,6 +7,15 @@ service library to be used in assignment 7 of UBC CS 416 2016 W2.
 
 package kvservice
 
+import (
+	"fmt"
+)
+
+
+var (
+	kvnodeIpPorts []string
+)
+
 // Represents a key in the system.
 type Key string
 
@@ -72,10 +81,60 @@ type tx interface {
 	Abort()
 }
 
+type myconn int
+
+type mytx struct {
+	ID int
+}
+
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
 // node ip:port strings.
 func NewConnection(nodes []string) connection {
-	// TODO
-	return nil
+	fmt.Println("kvservice received a call to NewConnection() with nodes:", nodes)
+	kvnodeIpPorts = nodes
+	fmt.Println("kvnodeIpPorts:", kvnodeIpPorts)
+	c := new(myconn)
+	return c
+}
+
+func (c *myconn) NewTX() (tx, error) {
+	fmt.Println("kvservice received a call to NewTX()")
+	newTx := new(mytx)
+	newTx.ID = getNewTransactionID()
+	return newTx, nil
+}
+
+func getNewTransactionID() int {
+	return 7
+}
+
+func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
+	fmt.Println("kvservice received a call to GetChildren(", node, parentHash, ")")
+	return []string{"TODO: implement GetChildren", "First Child", "Second Child"}
+}
+
+func (c *myconn) Close() {
+	fmt.Println("kvservice received a call to Close()")
+}
+
+
+
+func (t *mytx) Get(k Key) (success bool, v Value, err error) {
+	fmt.Println("kvservice received a call to Get(", k, ")")
+	return true, *new(Value), nil
+}
+
+func (t *mytx) Put(k Key, v Value) (success bool, err error) {
+	fmt.Println("kvservice received a call to Put(", k, v, ")")
+	return true, nil
+}
+
+func (t *mytx) Commit(validateNum int) (success bool, txID int, err error) {
+	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
+	return true, 0, nil
+}
+
+func (t *mytx) Abort() {
+	fmt.Println("kvservice received a call to Abort()")
 }
