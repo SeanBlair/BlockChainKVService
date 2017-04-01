@@ -94,6 +94,17 @@ type NewTransactionResp struct {
 	TxID int
 }
 
+type PutRequest struct {
+	TxID int
+	K Key
+	V Value
+}
+
+type PutResponse struct {
+	Success bool
+	Err error
+}
+
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
 // node ip:port strings.
@@ -113,9 +124,8 @@ func (c *myconn) NewTX() (tx, error) {
 }
 
 func getNewTransactionID() int {
-	kvnodeIpPort := kvnodeIpPorts[0]
 	var resp NewTransactionResp
-	client, err := rpc.Dial("tcp", kvnodeIpPort)
+	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
 	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.NewTransaction", true, &resp)
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
@@ -140,7 +150,20 @@ func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 
 func (t *mytx) Put(k Key, v Value) (success bool, err error) {
 	fmt.Println("kvservice received a call to Put(", k, v, ")")
-	return true, nil
+	success, err = put(t.ID, k, v)
+	return
+}
+
+func put(txid int, k Key, v Value) (success bool, err error) {
+	req := PutRequest{txid, k, v}
+	var resp PutResponse
+	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	checkError("Error in put(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.Put", req, &resp)
+	checkError("Error in put(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in put(), client.Close():", err, true)
+	return resp.Success, resp.Err
 }
 
 func (t *mytx) Commit(validateNum int) (success bool, txID int, err error) {

@@ -52,16 +52,28 @@ type Key string
 type Value string
 
 type Transaction struct {
-	TxID int
+	ID int
 	PutSet map[Key]Value
 	IsAborted bool
-	IsCommited bool
+	IsCommitted bool
+	CommitID int
 }
 
 type KVServer int
 
 type NewTransactionResp struct {
 	TxID int
+}
+
+type PutRequest struct {
+	TxID int
+	K Key
+	V Value
+}
+
+type PutResponse struct {
+	Success bool
+	Err error
 }
 
 func main() {
@@ -75,16 +87,44 @@ func main() {
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 
+	printState()
 	listenClientRPCs()
+}
+
+func printState () {
+	fmt.Println("\nKVNODE STATE:")
+	fmt.Println("-keyValueStore:")
+	for k := range keyValueStore {
+		fmt.Println("    Key:", k, "Value:", keyValueStore[k])
+	}
+	fmt.Println("-transactions:")
+	for txId := range transactions {
+		tx := transactions[txId]
+		fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
+		fmt.Println("    PutSet:")
+		for k := range tx.PutSet {
+			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
+		}
+	}
+	fmt.Println("Total number of transactions is:", len(transactions), "\n")
 }
 
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID += 10
-	tx := Transaction{txID, make(map[Key]Value), false, false}
+	tx := Transaction{txID, make(map[Key]Value), false, false, 0}
 	transactions[txID] = tx
 	*resp = NewTransactionResp{txID}
+	printState()
+	return nil
+}
+
+func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
+	fmt.Println("Received a call to Put(", req, ")")
+	transactions[req.TxID].PutSet[req.K] = req.V 
+	*resp = PutResponse{true, nil}
+	printState()
 	return nil
 }
 
