@@ -97,12 +97,23 @@ type NewTransactionResp struct {
 type PutRequest struct {
 	TxID int
 	K Key
-	V Value
+	Val Value
 }
 
 type PutResponse struct {
 	Success bool
 	Err error
+}
+
+type GetRequest struct {
+	TxID int
+	K Key
+}
+
+type GetResponse struct {
+	Success bool
+	Val Value
+	Err error	
 }
 
 // The 'constructor' for a new logical connection object. This is the
@@ -145,7 +156,20 @@ func (c *myconn) Close() {
 
 func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 	fmt.Println("kvservice received a call to Get(", k, ")")
-	return true, *new(Value), nil
+	success, v, err = get(t.ID, k)
+	return
+}
+
+func get(txid int, k Key) (success bool, v Value, err error) {
+	req := GetRequest{txid, k}
+	var resp GetResponse
+	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	checkError("Error in get(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.Get", req, &resp)
+	checkError("Error in get(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in get(), client.Close():", err, true)
+	return resp.Success, resp.Val, resp.Err
 }
 
 func (t *mytx) Put(k Key, v Value) (success bool, err error) {

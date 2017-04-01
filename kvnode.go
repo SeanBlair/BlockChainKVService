@@ -68,12 +68,23 @@ type NewTransactionResp struct {
 type PutRequest struct {
 	TxID int
 	K Key
-	V Value
+	Val Value
 }
 
 type PutResponse struct {
 	Success bool
 	Err error
+}
+
+type GetRequest struct {
+	TxID int
+	K Key
+}
+
+type GetResponse struct {
+	Success bool
+	Val Value
+	Err error	
 }
 
 func main() {
@@ -113,8 +124,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID += 10
-	tx := Transaction{txID, make(map[Key]Value), false, false, 0}
-	transactions[txID] = tx
+	transactions[txID] = Transaction{txID, make(map[Key]Value), false, false, 0}
 	*resp = NewTransactionResp{txID}
 	printState()
 	return nil
@@ -122,10 +132,25 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 
 func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
 	fmt.Println("Received a call to Put(", req, ")")
-	transactions[req.TxID].PutSet[req.K] = req.V 
+	transactions[req.TxID].PutSet[req.K] = req.Val 
 	*resp = PutResponse{true, nil}
 	printState()
 	return nil
+}
+
+func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
+	fmt.Println("Received a call to Get(", req, ")")
+	val := getValue(req)
+	*resp = GetResponse{true, val, nil}
+	return nil
+}
+
+func getValue(req GetRequest) (val Value) {
+	val, ok := transactions[req.TxID].PutSet[req.K]
+	if !ok {
+		val = keyValueStore[req.K]
+	}
+	return
 }
 
 func listenClientRPCs() {
