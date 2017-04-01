@@ -196,7 +196,15 @@ func (t *mytx) Commit(validateNum int) (success bool, txID int, err error) {
 }
 
 func (t *mytx) Abort() {
+	var resp bool
 	fmt.Println("kvservice received a call to Abort()")
+	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	checkError("Error in Abort(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.Abort", t.ID, &resp)
+	checkError("Error in Abort(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in Abort(), client.Close():", err, true)
+	return	
 }
 
 // Prints msg + err to console and exits program if exit == true

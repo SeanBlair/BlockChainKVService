@@ -153,6 +153,16 @@ func getValue(req GetRequest) (val Value) {
 	return
 }
 
+func (p *KVServer) Abort(txid int, resp *bool) error {
+	fmt.Println("Received a call to Abort(", txid, ")")
+	tx := transactions[txid]
+	tx.IsAborted = true
+	transactions[txid] = tx
+	*resp = true
+	printState()
+	return nil
+}
+
 func listenClientRPCs() {
 	kvServer := rpc.NewServer()
 	kv := new(KVServer)
