@@ -46,6 +46,8 @@ var (
 
 	transactions map[int]Transaction 
 	keyValueStore map[Key]Value
+
+	abortedMessage string = "This transaction is aborted!!"
 )
 
 // Represents a key in the system.
@@ -76,7 +78,7 @@ type PutRequest struct {
 
 type PutResponse struct {
 	Success bool
-	Err error
+	Err string
 }
 
 type GetRequest struct {
@@ -87,7 +89,7 @@ type GetRequest struct {
 type GetResponse struct {
 	Success bool
 	Val Value
-	Err error	
+	Err string	
 }
 
 type CommitRequest struct {
@@ -98,7 +100,7 @@ type CommitRequest struct {
 type CommitResponse struct {
 	Success bool
 	CommitID int
-	Err error
+	Err string
 }
 
 func main() {
@@ -147,16 +149,24 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 
 func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
 	fmt.Println("Received a call to Put(", req, ")")
-	transactions[req.TxID].PutSet[req.K] = req.Val 
-	*resp = PutResponse{true, nil}
+	if transactions[req.TxID].IsAborted {
+		*resp = PutResponse{false, abortedMessage}
+	} else {
+		transactions[req.TxID].PutSet[req.K] = req.Val 
+		*resp = PutResponse{true, ""}	
+	}
 	printState()
 	return nil
 }
 
 func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
 	fmt.Println("Received a call to Get(", req, ")")
-	val := getValue(req)
-	*resp = GetResponse{true, val, nil}
+	if transactions[req.TxID].IsAborted {
+		*resp = GetResponse{false, "", abortedMessage}
+	} else {
+		val := getValue(req)
+		*resp = GetResponse{true, val, ""}
+	}
 	return nil
 }
 
@@ -180,8 +190,12 @@ func (p *KVServer) Abort(txid int, resp *bool) error {
 
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
-	commitId := commit(req)
-	*resp = CommitResponse{true, commitId, nil}
+	if transactions[req.TxID].IsAborted {
+		*resp = CommitResponse{false, 0, abortedMessage}
+	} else {
+		commitId := commit(req)
+		*resp = CommitResponse{true, commitId, ""}
+	}
 	printState()
 	return nil
 }

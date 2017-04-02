@@ -8,6 +8,7 @@ service library to be used in assignment 7 of UBC CS 416 2016 W2.
 package kvservice
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/rpc"
@@ -102,7 +103,7 @@ type PutRequest struct {
 
 type PutResponse struct {
 	Success bool
-	Err error
+	Err string
 }
 
 type GetRequest struct {
@@ -113,7 +114,7 @@ type GetRequest struct {
 type GetResponse struct {
 	Success bool
 	Val Value
-	Err error	
+	Err string	
 }
 
 type CommitRequest struct {
@@ -124,7 +125,7 @@ type CommitRequest struct {
 type CommitResponse struct {
 	Success bool
 	CommitID int
-	Err error
+	Err string
 }
 
 // The 'constructor' for a new logical connection object. This is the
@@ -180,7 +181,7 @@ func get(txid int, k Key) (success bool, v Value, err error) {
 	checkError("Error in get(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in get(), client.Close():", err, true)
-	return resp.Success, resp.Val, resp.Err
+	return resp.Success, resp.Val, errors.New(resp.Err)
 }
 
 func (t *mytx) Put(k Key, v Value) (success bool, err error) {
@@ -198,7 +199,7 @@ func put(txid int, k Key, v Value) (success bool, err error) {
 	checkError("Error in put(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in put(), client.Close():", err, true)
-	return resp.Success, resp.Err
+	return resp.Success, errors.New(resp.Err)
 }
 
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
@@ -216,7 +217,7 @@ func commit(txid int, validateNum int) (success bool, commitID int, err error) {
 	checkError("Error in commit(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in commit(), client.Close():", err, true)
-	return resp.Success, resp.CommitID, resp.Err
+	return resp.Success, resp.CommitID, errors.New(resp.Err)
 }
 
 func (t *mytx) Abort() {
