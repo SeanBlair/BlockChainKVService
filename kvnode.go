@@ -40,7 +40,10 @@ var (
 	myNodeID int 
 	listenKVNodeIpPort string
 	listenClientIpPort string
+
 	nextTransactionID int
+	nextCommitID int
+
 	transactions map[int]Transaction 
 	keyValueStore map[Key]Value
 )
@@ -87,6 +90,17 @@ type GetResponse struct {
 	Err error	
 }
 
+type CommitRequest struct {
+	TxID int
+	ValidateNum int
+}
+
+type CommitResponse struct {
+	Success bool
+	CommitID int
+	Err error
+}
+
 func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
@@ -94,7 +108,8 @@ func main() {
 		"numLeadingZeroes:", numLeadingZeroes, "nodesFilePath:", nodesFilePath, "myNodeID:", myNodeID, 
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
-	nextTransactionID = 10
+	nextTransactionID = 1
+	nextCommitID = 10
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 
@@ -123,7 +138,7 @@ func printState () {
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
-	nextTransactionID += 10
+	nextTransactionID++
 	transactions[txID] = Transaction{txID, make(map[Key]Value), false, false, 0}
 	*resp = NewTransactionResp{txID}
 	printState()
@@ -161,6 +176,28 @@ func (p *KVServer) Abort(txid int, resp *bool) error {
 	*resp = true
 	printState()
 	return nil
+}
+
+func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
+	fmt.Println("Received a call to Commit(", req, ")")
+	commitId := commit(req)
+	*resp = CommitResponse{true, commitId, nil}
+	printState()
+	return nil
+}
+
+func commit(req CommitRequest) (commitId int) {
+	tx := transactions[req.TxID]
+	putSet := tx.PutSet
+	for k := range putSet {
+		keyValueStore[k] = putSet[k]
+	}
+	commitId = nextCommitID
+	nextCommitID += 10
+	tx.IsCommitted = true
+	tx.CommitID = commitId
+	transactions[req.TxID] = tx
+	return
 }
 
 func listenClientRPCs() {

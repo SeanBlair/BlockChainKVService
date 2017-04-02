@@ -116,6 +116,17 @@ type GetResponse struct {
 	Err error	
 }
 
+type CommitRequest struct {
+	TxID int
+	ValidateNum int
+}
+
+type CommitResponse struct {
+	Success bool
+	CommitID int
+	Err error
+}
+
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
 // node ip:port strings.
@@ -190,9 +201,22 @@ func put(txid int, k Key, v Value) (success bool, err error) {
 	return resp.Success, resp.Err
 }
 
-func (t *mytx) Commit(validateNum int) (success bool, txID int, err error) {
+func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
-	return true, 0, nil
+	success, commitID, err = commit(t.ID, validateNum)
+	return
+}
+
+func commit(txid int, validateNum int) (success bool, commitID int, err error) {
+	req := CommitRequest{txid, validateNum}
+	var resp CommitResponse
+	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	checkError("Error in commit(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.Commit", req, &resp)
+	checkError("Error in commit(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in commit(), client.Close():", err, true)
+	return resp.Success, resp.CommitID, resp.Err
 }
 
 func (t *mytx) Abort() {
