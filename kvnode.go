@@ -41,10 +41,17 @@ var (
 	listenKVNodeIpPort string
 	listenClientIpPort string
 
+	// Transaction ID's are incremented by 1
 	nextTransactionID int
+	
+	// Commit ID's are incremented by 10, to allow reordering due to Block-Chain logic
 	nextCommitID int
 
+	// All transactions the system has seen
 	transactions map[int]Transaction 
+
+	// Represents the values corresponding to the in-order execution of all the 
+	// transactions along the block-chain. Only holds values of commited transactions.
 	keyValueStore map[Key]Value
 
 	abortedMessage string = "This transaction is aborted!!"
@@ -58,12 +65,16 @@ type Value string
 
 type Transaction struct {
 	ID int
+
+	// For storing this transaction's Puts before it commits.
+	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
 }
 
+// For registering RPC's
 type KVServer int
 
 type NewTransactionResp struct {
@@ -116,9 +127,11 @@ func main() {
 	keyValueStore = make(map[Key]Value)
 
 	printState()
+
 	listenClientRPCs()
 }
 
+// For visualizing the current state of a kvnode's keyValueStore and transactions maps
 func printState () {
 	fmt.Println("\nKVNODE STATE:")
 	fmt.Println("-keyValueStore:")
@@ -137,6 +150,7 @@ func printState () {
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
 }
 
+// Adds a Transaction struct to the transactions map, returns a unique transaction ID
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
@@ -147,6 +161,8 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	return nil
 }
 
+// Returns false if the given transaction is aborted, otherwise adds a Put record 
+// to the given transaction's PutSet, 
 func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
 	fmt.Println("Received a call to Put(", req, ")")
 	if transactions[req.TxID].IsAborted {
@@ -159,6 +175,9 @@ func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
 	return nil
 }
 
+// Returns the Value corresponding to the given Key and to the given transaction's
+// previous Put calls. Returns "" if key does not exist, and false
+// if transaction is aborted.
 func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
 	fmt.Println("Received a call to Get(", req, ")")
 	if transactions[req.TxID].IsAborted {
@@ -170,6 +189,8 @@ func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
 	return nil
 }
 
+// Returns the given Key's value by first checking in the given transaction's PutSet,
+// otherwise retrieves it from the keyValueStore. Returns "" if key does not exist
 func getValue(req GetRequest) (val Value) {
 	val, ok := transactions[req.TxID].PutSet[req.K]
 	if !ok {
@@ -178,6 +199,7 @@ func getValue(req GetRequest) (val Value) {
 	return
 }
 
+// Sets the IsAborted field, of transaction with id == txid, to true
 func (p *KVServer) Abort(txid int, resp *bool) error {
 	fmt.Println("Received a call to Abort(", txid, ")")
 	tx := transactions[txid]
@@ -188,6 +210,8 @@ func (p *KVServer) Abort(txid int, resp *bool) error {
 	return nil
 }
 
+// If the given transaction is aborted returns false, otherwise commits the transaction,
+// and returns its CommitID value, 
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
 	if transactions[req.TxID].IsAborted {
@@ -200,6 +224,9 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	return nil
 }
 
+// Adds all values in the given transaction's PutSet into the keyValueStore.
+// Sets the given transaction's IsCommited field to true and its CommitID to the 
+// current value of nextCommitID, returns this value and increments nextCommitID
 func commit(req CommitRequest) (commitId int) {
 	tx := transactions[req.TxID]
 	putSet := tx.PutSet
@@ -214,6 +241,7 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
+// Infinitely listens and serves KVServer RPC calls
 func listenClientRPCs() {
 	kvServer := rpc.NewServer()
 	kv := new(KVServer)
