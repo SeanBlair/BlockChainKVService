@@ -85,12 +85,15 @@ type tx interface {
 	Abort()
 }
 
+// Concrete implementation of a connection interface
 type myconn int
 
+// Concrete implementation of a tx interface
 type mytx struct {
 	ID int
 }
 
+// RPC structs /////////////////////////////
 type NewTransactionResp struct {
 	TxID int
 }
@@ -127,6 +130,8 @@ type CommitResponse struct {
 	CommitID int
 	Err string
 }
+/////////////////////////////////////////////
+
 
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
@@ -139,6 +144,7 @@ func NewConnection(nodes []string) connection {
 	return c
 }
 
+// Initializes a Transaction
 func (c *myconn) NewTX() (tx, error) {
 	fmt.Println("kvservice received a call to NewTX()")
 	newTx := new(mytx)
@@ -146,6 +152,7 @@ func (c *myconn) NewTX() (tx, error) {
 	return newTx, nil
 }
 
+// Calls KVServer.NewTransaction RPC, returns a unique transaction ID
 func getNewTransactionID() int {
 	var resp NewTransactionResp
 	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
@@ -157,21 +164,26 @@ func getNewTransactionID() int {
 	return resp.TxID
 }
 
+// Stub
 func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
 	fmt.Println("kvservice received a call to GetChildren(", node, parentHash, ")")
 	return []string{"TODO: implement GetChildren", "First Child", "Second Child"}
 }
 
+// Stub
 func (c *myconn) Close() {
 	fmt.Println("kvservice received a call to Close()")
 }
 
+// Returns the Value associated with the given Key
 func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 	fmt.Println("kvservice received a call to Get(", k, ")")
 	success, v, err = get(t.ID, k)
 	return
 }
 
+// Calls KVServer.Get RPC for the value associated with the given
+// Key and transaction txid 
 func get(txid int, k Key) (success bool, v Value, err error) {
 	req := GetRequest{txid, k}
 	var resp GetResponse
@@ -184,12 +196,14 @@ func get(txid int, k Key) (success bool, v Value, err error) {
 	return resp.Success, resp.Val, errors.New(resp.Err)
 }
 
+// Associates Value v with Key k in the system
 func (t *mytx) Put(k Key, v Value) (success bool, err error) {
 	fmt.Println("kvservice received a call to Put(", k, v, ")")
 	success, err = put(t.ID, k, v)
 	return
 }
 
+// Calls KVServer.Put RPC to associate k and v with transaction txid
 func put(txid int, k Key, v Value) (success bool, err error) {
 	req := PutRequest{txid, k, v}
 	var resp PutResponse
@@ -202,12 +216,14 @@ func put(txid int, k Key, v Value) (success bool, err error) {
 	return resp.Success, errors.New(resp.Err)
 }
 
+// Commits a transaction
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
 	success, commitID, err = commit(t.ID, validateNum)
 	return
 }
 
+// Calls KVServer.Commit RPC to start the process of committing transaction txid
 func commit(txid int, validateNum int) (success bool, commitID int, err error) {
 	req := CommitRequest{txid, validateNum}
 	var resp CommitResponse
@@ -220,6 +236,7 @@ func commit(txid int, validateNum int) (success bool, commitID int, err error) {
 	return resp.Success, resp.CommitID, errors.New(resp.Err)
 }
 
+// Calls KVServer.Abort to abort the given transaction
 func (t *mytx) Abort() {
 	var resp bool
 	fmt.Println("kvservice received a call to Abort()")
