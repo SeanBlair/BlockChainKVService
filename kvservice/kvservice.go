@@ -1,7 +1,14 @@
 /*
 
+A distributed block-chain transactional key-value service
+
+Assignment 7 of UBC CS 416 2016 W2
+http://www.cs.ubc.ca/~bestchai/teaching/cs416_2016w2/assign7/index.html
+
+Created by Harlan Sim and Sean Blair, April 2017
+
 This package specifies the application's interface to the key-value
-service library to be used in assignment 7 of UBC CS 416 2016 W2.
+service library.
 
 */
 
