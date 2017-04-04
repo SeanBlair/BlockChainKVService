@@ -66,8 +66,10 @@ type Key string
 type Value string
 
 type Block struct {
-	ParentHash string
-	ChildHash string
+	BlockID int
+	BlockHash string
+	ParentID int
+	ChildrenIDs []int
 	Txn Transaction
 	NodeID int
 	Nonce uint32
