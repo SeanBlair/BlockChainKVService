@@ -54,6 +54,8 @@ var (
 	// transactions along the block-chain. Only holds values of commited transactions.
 	keyValueStore map[Key]Value
 
+	// Maps CommitID to Block
+	blockChain map[int]Block 
 	abortedMessage string = "This transaction is aborted!!"
 )
 
@@ -63,12 +65,21 @@ type Key string
 // Represent a value in the system.
 type Value string
 
+type Block struct {
+	ParentHash string
+	ChildHash string
+	Txn Transaction
+	NodeID int
+	Nonce uint32
+}
+
 type Transaction struct {
 	ID int
 
 	// For storing this transaction's Puts before it commits.
 	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
+	KeySet []Key
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
@@ -155,7 +166,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID++
-	transactions[txID] = Transaction{txID, make(map[Key]Value), false, false, 0}
+	transactions[txID] = Transaction{txID, make(map[Key]Value), []Key{}, false, false, 0}
 	*resp = NewTransactionResp{txID}
 	printState()
 	return nil
@@ -169,6 +180,7 @@ func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
 		*resp = PutResponse{false, abortedMessage}
 	} else {
 		transactions[req.TxID].PutSet[req.K] = req.Val 
+		appendKeyIfMissing(req.TxID, req.K)
 		*resp = PutResponse{true, ""}	
 	}
 	printState()
@@ -183,6 +195,7 @@ func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
 	if transactions[req.TxID].IsAborted {
 		*resp = GetResponse{false, "", abortedMessage}
 	} else {
+		appendKeyIfMissing(req.TxID, req.K)
 		val := getValue(req)
 		*resp = GetResponse{true, val, ""}
 	}
@@ -238,6 +251,21 @@ func commit(req CommitRequest) (commitId int) {
 	tx.IsCommitted = true
 	tx.CommitID = commitId
 	transactions[req.TxID] = tx
+	return
+}
+
+// Looks up the transaction, if it already has key - return. Else, append it to
+// the transaction's KeySet and replace the transaction in the map with it. 
+// (Must replace transaction because it cannot be directly appended) ...Stupid pointer issues
+func appendKeyIfMissing(txID int, k Key) {
+	txn := transactions[txID]
+	for _, key := range txn.KeySet {
+		if key == k {
+			return
+		}
+	}
+	txn.KeySet = append(txn.KeySet, k)
+	transactions[txID] = txn
 	return
 }
 
