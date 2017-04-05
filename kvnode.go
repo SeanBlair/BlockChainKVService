@@ -39,7 +39,6 @@ import (
 )
 
 var (
-	genesisBlock Block
 	genesisHash string
 	leafBlockHash string // TODO: Reconsider naming
 	numLeadingZeroes int 
@@ -155,8 +154,8 @@ func main() {
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 	blockChain = make(map[string]Block)
-	genesisBlock = Block{Hash: genesisHash}
-	blockChain[genesisBlock.Hash] = genesisBlock
+	genesisBlock := Block{Hash: genesisHash}
+	blockChain[genesisHash] = genesisBlock
 	leafBlockHash = genesisHash
 	isGenerateNoOps = true
 	printState()
@@ -226,8 +225,31 @@ func printState () {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
 		}
 	}
+	fmt.Println("-blockChain:")
+	printBlockChain()
 	fmt.Println("blockChain size:", len(blockChain))
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
+}
+
+func printBlockChain() {
+	genesisBlock := blockChain[genesisHash]
+	fmt.Printf("GenesisBlockHash: %x\n", genesisBlock.Hash)
+	fmt.Printf("GenesisBlockChildren: %x\n", genesisBlock.ChildrenHashes)
+	for _, childHash := range genesisBlock.ChildrenHashes {
+		printBlock(childHash, 1)
+	}
+}
+
+func printBlock(blockHash string, depth int) {
+	indent := ""
+	for i := 0; i < depth; i++ {
+		indent += " "
+	}
+	fmt.Printf("%sBlockHash :%x\n", indent, blockHash)
+	fmt.Printf("%sChildrenHashes :%x\n", indent, blockChain[blockHash].ChildrenHashes)
+	for _, childHash := range blockChain[blockHash].ChildrenHashes {
+		printBlock(childHash, depth + 1)
+	}
 }
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
@@ -339,7 +361,7 @@ func computeHash(block Block) Block {
 		hash := sum[:] // Converts from [32]byte to []byte
 		if isLeadingNumZeroes(hash) {
 			block.Hash = string(hash)
-			fmt.Println("The correct hash of tempHashBlock:", hash)
+			fmt.Printf("The correct hash of tempHashBlock is:%x\n", block.Hash)
 			block.HashBlock = tempHashBlock
 			return block
 		} else {
