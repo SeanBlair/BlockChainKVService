@@ -34,6 +34,7 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
+	"math"
 )
 
 var (
@@ -73,6 +74,7 @@ type Key string
 
 // Represent a value in the system.
 type Value string
+
 type HashBlock struct {
 	ParentHash string
 	Txn Transaction
@@ -174,6 +176,7 @@ func printState () {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
 		}
 	}
+	fmt.Println("blockChain size:", len(blockChain))
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
 }
 
@@ -280,13 +283,13 @@ func computeHash(block Block) Block {
 	tempHashBlock := block.HashBlock
 	for {
 		data := []byte(fmt.Sprintf("%v", tempHashBlock))
+		fmt.Println("The tempHashBlock:", data)
 		sum := sha256.Sum256(data)
 		hash := sum[:] // Converts from [32]byte to []byte
-		fmt.Printf("%x\n", hash)
-		if (verifyHash(tempHashBlock, hash) == true) {
+		if isLeadingNumZeroes(hash) {
 			block.Hash = string(hash)
+			fmt.Println("The correct hash of tempHashBlock:", hash)
 			block.HashBlock = tempHashBlock
-			fmt.Println(block)
 			return block
 		} else {
 			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
@@ -294,29 +297,31 @@ func computeHash(block Block) Block {
 	}
 }
 
-func verifyHash(hashBlock HashBlock, hash []byte) bool {
-	if(numLeadingZeroes == 0) {
-		if (hash[0] != 0) {
-			// Does not contain a leading zero, so return Hash
-			fmt.Println("SUCCESS")
-			fmt.Println(hash)
-			return true
-		}
-		return false
+// Returns true if given hash has the minimum number of leading zeroes.  
+func isLeadingNumZeroes(hash []byte) bool {
+	if (numLeadingZeroes == 0) {
+		return true
 	} else {
-		for i := 0; i < numLeadingZeroes; i++ {
-			var currByte byte
-			currByte = hash[i]
-			if(currByte == 0) {
-				continue
+		i := 0;
+		numZeroes := numLeadingZeroes
+		for {
+			// numZeroes <= 8, byte at hash[i] will determine validity
+			if numZeroes - 8 <= 0 {
+				break
 			} else {
-				return false
+				// numZeroes is greater than 8, byte at hash[i] must be zero
+				if hash[i] != 0 {
+					return false
+				} else {
+					i++
+					numZeroes -= 8
+				}
 			}
 		}
-		// If it finishes for loop and cond remains true, then it has the correct amount of leading zeros
-		fmt.Println("SUCCESS")
-		fmt.Println(hash)
-		return true
+		// returns true if byte at hash[i] has the the minimum number of leading zeroes
+		// if numZeroes is 8: hash[i] < 2^(8-8) == hash[1] < 1 == hash[i] must be (0000 0000)b.
+		// if numZeroes is 1: hash[i] < 2^(8-1) == hash[1] < (1000 0000)b == hash[i] <= (0111 1111)b
+		return float64(hash[i]) < math.Pow(2, float64(8 - numZeroes))
 	}
 }
 
