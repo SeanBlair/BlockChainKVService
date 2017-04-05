@@ -64,6 +64,7 @@ var (
 	blockChain map[string]Block 
 
 	isGenerateNoOps bool
+	isWorkingOnNoOp bool
 
 	// For debugging...
 	// done chan int
@@ -158,6 +159,7 @@ func main() {
 	blockChain[genesisHash] = genesisBlock
 	leafBlockHash = genesisHash
 	isGenerateNoOps = true
+	isWorkingOnNoOp = false
 	printState()
 	go generateNoOpBlocks()
 	listenClientRPCs()
@@ -167,8 +169,10 @@ func generateNoOpBlocks() {
 	fmt.Println("In generateNoOpBlocks()")
 	for {
 		if isGenerateNoOps {
+			isWorkingOnNoOp = true
 			generateNoOpBlock()
 			printState()
+			isWorkingOnNoOp = false
 		} else {
 			time.Sleep(time.Second)
 		}
@@ -245,6 +249,7 @@ func printBlock(blockHash string, depth int) {
 	for i := 0; i < depth; i++ {
 		indent += " "
 	}
+	fmt.Printf("%sBlockTransactionID: %v\n", indent, blockChain[blockHash].HashBlock.Txn.ID)
 	fmt.Printf("%sBlockHash :%x\n", indent, blockHash)
 	fmt.Printf("%sChildrenHashes :%x\n", indent, blockChain[blockHash].ChildrenHashes)
 	for _, childHash := range blockChain[blockHash].ChildrenHashes {
@@ -321,16 +326,21 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	if transactions[req.TxID].IsAborted {
 		*resp = CommitResponse{false, 0, abortedMessage}
 	} else {
-		// TODO change this call??
-		commitId := commit(req)
+		isGenerateNoOps = false
+		for isWorkingOnNoOp {
+			fmt.Println("Waiting for NoOp")
+		}
+		
 		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
 		newBlock = computeHash(newBlock)
 		// Add to blockChain
 		blockChain[newBlock.Hash] = newBlock
 		// TODO: Broadcast newBlock
+		commitId := commit(req)
 		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
+	isGenerateNoOps = true
 	return nil
 }
 
@@ -356,13 +366,21 @@ func computeHash(block Block) Block {
 	tempHashBlock := block.HashBlock
 	for {
 		data := []byte(fmt.Sprintf("%v", tempHashBlock))
-		fmt.Println("The tempHashBlock:", data)
 		sum := sha256.Sum256(data)
 		hash := sum[:] // Converts from [32]byte to []byte
 		if isLeadingNumZeroes(hash) {
-			block.Hash = string(hash)
+			hashString := string(hash)
+			block.Hash = hashString
 			fmt.Printf("The correct hash of tempHashBlock is:%x\n", block.Hash)
 			block.HashBlock = tempHashBlock
+
+			leafBlock := blockChain[leafBlockHash]
+			leafBlockChildren := leafBlock.ChildrenHashes
+			leafBlockChildren = append(leafBlockChildren, hashString)
+			leafBlock.ChildrenHashes = leafBlockChildren
+			blockChain[leafBlockHash] = leafBlock
+			leafBlockHash = hashString
+
 			return block
 		} else {
 			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
