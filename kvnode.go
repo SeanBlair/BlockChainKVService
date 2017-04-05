@@ -35,6 +35,7 @@ import (
 	"os"
 	"strconv"
 	"math"
+	"time"
 )
 
 var (
@@ -62,6 +63,8 @@ var (
 
 	// Maps BlockHash to Block
 	blockChain map[string]Block 
+
+	isGenerateNoOps bool
 
 	// For debugging...
 	// done chan int
@@ -155,9 +158,56 @@ func main() {
 	genesisBlock = Block{Hash: genesisHash}
 	blockChain[genesisBlock.Hash] = genesisBlock
 	leafBlockHash = genesisHash
+	isGenerateNoOps = true
 	printState()
-
+	go generateNoOpBlocks()
 	listenClientRPCs()
+}
+
+func generateNoOpBlocks() {
+	fmt.Println("In generateNoOpBlocks()")
+	for {
+		if isGenerateNoOps {
+			generateNoOpBlock()
+			printState()
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func generateNoOpBlock() {
+	fmt.Println("In generateNoOpBlock()")
+	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
+	tempHashBlock := noOpBlock.HashBlock
+	data := []byte(fmt.Sprintf("%v", tempHashBlock))
+	sum := sha256.Sum256(data)
+	hash := sum[:] // Converts from [32]byte to []byte
+
+	for isGenerateNoOps {
+		if isLeadingNumZeroes(hash) {
+			hashString := string(hash)
+			noOpBlock.Hash = hashString
+			noOpBlock.HashBlock = tempHashBlock
+			
+			leafBlock := blockChain[leafBlockHash]
+			leafBlockChildren := leafBlock.ChildrenHashes
+			leafBlockChildren = append(leafBlockChildren, hashString)
+			leafBlock.ChildrenHashes = leafBlockChildren
+			blockChain[leafBlockHash] = leafBlock
+
+			leafBlockHash = hashString
+			// TODO: broadcast Block
+			return
+		} else {
+			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
+			data = []byte(fmt.Sprintf("%v", tempHashBlock))
+			sum = sha256.Sum256(data)
+			hash = sum[:] // Converts from [32]byte to []byte
+		}
+	}
+ 	// received a call to commit which set isGenerateNoOps = false
+	return
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -249,6 +299,7 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	if transactions[req.TxID].IsAborted {
 		*resp = CommitResponse{false, 0, abortedMessage}
 	} else {
+		// TODO change this call??
 		commitId := commit(req)
 		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
 		newBlock = computeHash(newBlock)
