@@ -12,6 +12,8 @@ The kvnode process command line usage must be:
 
 go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID] [listen-node-in IP:port] [listen-client-in IP:port]
 
+example: go run kvnode.go 5473be60b466a24872fd7a007c41d1455e9044cca57d433eb51271b61bc16987 2 nodeList.txt 1 localhost:2223 localhost:2222
+
 [ghash] : SHA 256 hash in hexadecimal of the genesis block for this instantiation of the system.
 [num-zeroes] : required number of leading zeroes in the proof-of-work algorithm, greater or equal to 1.
 [nodesFile] : a file containing one line per node in the key-value service. Each line must be terminated by '\n' 
@@ -25,6 +27,7 @@ go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID] [listen-node-in IP:po
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -34,7 +37,9 @@ import (
 )
 
 var (
+	genesisBlock Block
 	genesisHash string
+	leafBlockHash string // TODO: Reconsider naming
 	numLeadingZeroes int 
 	nodesFilePath string
 	myNodeID int 
@@ -54,8 +59,12 @@ var (
 	// transactions along the block-chain. Only holds values of commited transactions.
 	keyValueStore map[Key]Value
 
-	// Maps CommitID to Block
-	blockChain map[int]Block 
+	// Maps BlockHash to Block
+	blockChain map[string]Block 
+
+	// For debugging...
+	// done chan int
+
 	abortedMessage string = "This transaction is aborted!!"
 )
 
@@ -64,15 +73,17 @@ type Key string
 
 // Represent a value in the system.
 type Value string
-
-type Block struct {
-	BlockID int
-	BlockHash string
-	ParentID int
-	ChildrenIDs []int
+type HashBlock struct {
+	ParentHash string
 	Txn Transaction
 	NodeID int
 	Nonce uint32
+}
+
+type Block struct {
+	Hash string
+	ChildrenHashes []string
+	HashBlock HashBlock
 }
 
 type Transaction struct {
@@ -138,7 +149,10 @@ func main() {
 	nextCommitID = 10
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
-
+	blockChain = make(map[string]Block)
+	genesisBlock = Block{Hash: genesisHash}
+	blockChain[genesisBlock.Hash] = genesisBlock
+	leafBlockHash = genesisHash
 	printState()
 
 	listenClientRPCs()
@@ -233,6 +247,11 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		*resp = CommitResponse{false, 0, abortedMessage}
 	} else {
 		commitId := commit(req)
+		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
+		newBlock = computeHash(newBlock)
+		// Add to blockChain
+		blockChain[newBlock.Hash] = newBlock
+		// TODO: Broadcast newBlock
 		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
@@ -254,6 +273,51 @@ func commit(req CommitRequest) (commitId int) {
 	tx.CommitID = commitId
 	transactions[req.TxID] = tx
 	return
+}
+
+func computeHash(block Block) Block {
+	fmt.Println("Computing Hash...")
+	tempHashBlock := block.HashBlock
+	for {
+		data := []byte(fmt.Sprintf("%v", tempHashBlock))
+		sum := sha256.Sum256(data)
+		hash := sum[:] // Converts from [32]byte to []byte
+		fmt.Printf("%x\n", hash)
+		if (verifyHash(tempHashBlock, hash) == true) {
+			block.Hash = string(hash)
+			block.HashBlock = tempHashBlock
+			fmt.Println(block)
+			return block
+		} else {
+			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
+		}
+	}
+}
+
+func verifyHash(hashBlock HashBlock, hash []byte) bool {
+	if(numLeadingZeroes == 0) {
+		if (hash[0] != 0) {
+			// Does not contain a leading zero, so return Hash
+			fmt.Println("SUCCESS")
+			fmt.Println(hash)
+			return true
+		}
+		return false
+	} else {
+		for i := 0; i < numLeadingZeroes; i++ {
+			var currByte byte
+			currByte = hash[i]
+			if(currByte == 0) {
+				continue
+			} else {
+				return false
+			}
+		}
+		// If it finishes for loop and cond remains true, then it has the correct amount of leading zeros
+		fmt.Println("SUCCESS")
+		fmt.Println(hash)
+		return true
+	}
 }
 
 // Looks up the transaction, if it already has key - return. Else, append it to
