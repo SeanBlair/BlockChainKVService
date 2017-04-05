@@ -182,35 +182,43 @@ func generateNoOpBlocks() {
 func generateNoOpBlock() {
 	fmt.Println("In generateNoOpBlock()")
 	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
-	tempHashBlock := noOpBlock.HashBlock
-	data := []byte(fmt.Sprintf("%v", tempHashBlock))
-	sum := sha256.Sum256(data)
-	hash := sum[:] // Converts from [32]byte to []byte
-
 	for isGenerateNoOps {
-		if isLeadingNumZeroes(hash) {
-			hashString := string(hash)
-			noOpBlock.Hash = hashString
-			noOpBlock.HashBlock = tempHashBlock
-			
-			leafBlock := blockChain[leafBlockHash]
-			leafBlockChildren := leafBlock.ChildrenHashes
-			leafBlockChildren = append(leafBlockChildren, hashString)
-			leafBlock.ChildrenHashes = leafBlockChildren
-			blockChain[leafBlockHash] = leafBlock
-
-			leafBlockHash = hashString
-			// TODO: broadcast Block
+		success := generateBlock(&noOpBlock)
+		if success {
 			return
-		} else {
-			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
-			data = []byte(fmt.Sprintf("%v", tempHashBlock))
-			sum = sha256.Sum256(data)
-			hash = sum[:] // Converts from [32]byte to []byte
 		}
 	}
  	// received a call to commit which set isGenerateNoOps = false
 	return
+}
+
+
+func generateBlock(block *Block) bool {
+	// fmt.Println("In generateBlock()")
+	b := *block
+	data := []byte(fmt.Sprintf("%v", b.HashBlock))
+	sum := sha256.Sum256(data)
+	hash := sum[:] // Converts from [32]byte to []byte
+	if isLeadingNumZeroes(hash) {
+		hashString := string(hash)
+		b.Hash = hashString
+		blockChain[hashString] = b
+			
+		leafBlock := blockChain[leafBlockHash]
+		leafBlockChildren := leafBlock.ChildrenHashes
+		leafBlockChildren = append(leafBlockChildren, hashString)
+		leafBlock.ChildrenHashes = leafBlockChildren
+		blockChain[leafBlockHash] = leafBlock
+
+		leafBlockHash = hashString
+			// TODO: broadcast Block
+		return true
+	} else {
+		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
+		*block = b
+		return false
+	}
+	// return
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -249,10 +257,11 @@ func printBlock(blockHash string, depth int) {
 	for i := 0; i < depth; i++ {
 		indent += " "
 	}
-	fmt.Printf("%sBlockTransactionID: %v\n", indent, blockChain[blockHash].HashBlock.Txn.ID)
-	fmt.Printf("%sBlockHash :%x\n", indent, blockHash)
-	fmt.Printf("%sChildrenHashes :%x\n", indent, blockChain[blockHash].ChildrenHashes)
-	for _, childHash := range blockChain[blockHash].ChildrenHashes {
+	block := blockChain[blockHash]
+	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.Txn.ID)
+	fmt.Printf("%sBlockHash :%x\n", indent, block.Hash)
+	fmt.Printf("%sChildrenHashes :%x\n", indent, block.ChildrenHashes)
+	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash, depth + 1)
 	}
 }
@@ -332,10 +341,8 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		}
 		
 		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
-		newBlock = computeHash(newBlock)
-		// Add to blockChain
-		blockChain[newBlock.Hash] = newBlock
-		// TODO: Broadcast newBlock
+		generateCommitBlock(newBlock)
+		
 		commitId := commit(req)
 		*resp = CommitResponse{true, commitId, ""}
 	}
@@ -361,7 +368,7 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
-func computeHash(block Block) Block {
+func generateCommitBlock(block Block) {
 	fmt.Println("Computing Hash...")
 	tempHashBlock := block.HashBlock
 	for {
@@ -373,7 +380,10 @@ func computeHash(block Block) Block {
 			block.Hash = hashString
 			fmt.Printf("The correct hash of tempHashBlock is:%x\n", block.Hash)
 			block.HashBlock = tempHashBlock
+			// Add to blockChain
+			blockChain[hashString] = block
 
+			// set previous leaf blocks new child
 			leafBlock := blockChain[leafBlockHash]
 			leafBlockChildren := leafBlock.ChildrenHashes
 			leafBlockChildren = append(leafBlockChildren, hashString)
@@ -381,7 +391,8 @@ func computeHash(block Block) Block {
 			blockChain[leafBlockHash] = leafBlock
 			leafBlockHash = hashString
 
-			return block
+			// TODO: Broadcast newBlock
+			return
 		} else {
 			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
 		}
