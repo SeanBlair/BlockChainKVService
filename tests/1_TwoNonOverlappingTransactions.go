@@ -35,17 +35,17 @@ func main() {
 	success, txID, err := t1.Commit(1)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
-	// t2, err := c.NewTX()
-	// fmt.Printf("NewTX returned: %v, %v\n", t2, err)
+	t2, err := c.NewTX()
+	fmt.Printf("NewTX returned: %v, %v\n", t2, err)
 
-	// success, err = t2.Put("B", "T2")
-	// fmt.Printf("Put returned: %v, %v\n", success, err)
+	success, err = t2.Put("B", "T2")
+	fmt.Printf("Put returned: %v, %v\n", success, err)
 
-	// success, v, err = t2.Get("B")
-	// fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
+	success, v, err = t2.Get("B")
+	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// success, txID, err = t2.Commit(1)
-	// fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
+	success, txID, err = t2.Commit(1)
+	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	c.Close()
 }

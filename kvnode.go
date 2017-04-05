@@ -74,6 +74,7 @@ type Key string
 
 // Represent a value in the system.
 type Value string
+
 type HashBlock struct {
 	ParentHash string
 	Txn Transaction
@@ -161,21 +162,22 @@ func main() {
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
 func printState () {
-	// fmt.Println("\nKVNODE STATE:")
-	// fmt.Println("-keyValueStore:")
-	// for k := range keyValueStore {
-	// 	fmt.Println("    Key:", k, "Value:", keyValueStore[k])
-	// }
-	// fmt.Println("-transactions:")
-	// for txId := range transactions {
-	// 	tx := transactions[txId]
-	// 	fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
-	// 	fmt.Println("    PutSet:")
-	// 	for k := range tx.PutSet {
-	// 		fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
-	// 	}
-	// }
-	// fmt.Println("Total number of transactions is:", len(transactions), "\n")
+	fmt.Println("\nKVNODE STATE:")
+	fmt.Println("-keyValueStore:")
+	for k := range keyValueStore {
+		fmt.Println("    Key:", k, "Value:", keyValueStore[k])
+	}
+	fmt.Println("-transactions:")
+	for txId := range transactions {
+		tx := transactions[txId]
+		fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
+		fmt.Println("    PutSet:")
+		for k := range tx.PutSet {
+			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
+		}
+	}
+	fmt.Println("blockChain size:", len(blockChain))
+	fmt.Println("Total number of transactions is:", len(transactions), "\n")
 }
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
@@ -281,14 +283,13 @@ func computeHash(block Block) Block {
 	tempHashBlock := block.HashBlock
 	for {
 		data := []byte(fmt.Sprintf("%v", tempHashBlock))
+		fmt.Println("The tempHashBlock:", data)
 		sum := sha256.Sum256(data)
 		hash := sum[:] // Converts from [32]byte to []byte
-		fmt.Printf("%x\n", hash)
 		if isLeadingNumZeroes(hash) {
 			block.Hash = string(hash)
-			fmt.Println(hash)
+			fmt.Println("The correct hash of tempHashBlock:", hash)
 			block.HashBlock = tempHashBlock
-			fmt.Println(block)
 			return block
 		} else {
 			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
@@ -323,32 +324,6 @@ func isLeadingNumZeroes(hash []byte) bool {
 		return float64(hash[i]) < math.Pow(2, float64(8 - numZeroes))
 	}
 }
-
-// func verifyHash(hashBlock HashBlock, hash []byte) bool {
-// 	if(numLeadingZeroes == 0) {
-// 		if (hash[0] != 0) {
-// 			// Does not contain a leading zero, so return Hash
-// 			fmt.Println("SUCCESS")
-// 			fmt.Println(hash)
-// 			return true
-// 		}
-// 		return false
-// 	} else {
-// 		for i := 0; i < numLeadingZeroes; i++ {
-// 			var currByte byte
-// 			currByte = hash[i]
-// 			if(currByte == 0) {
-// 				continue
-// 			} else {
-// 				return false
-// 			}
-// 		}
-// 		// If it finishes for loop and cond remains true, then it has the correct amount of leading zeros
-// 		fmt.Println("SUCCESS")
-// 		fmt.Println(hash)
-// 		return true
-// 	}
-// }
 
 // Looks up the transaction, if it already has key - return. Else, append it to
 // the transaction's KeySet and replace the transaction in the map with it. 
