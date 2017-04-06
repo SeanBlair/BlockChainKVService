@@ -219,7 +219,6 @@ func generateBlock(block *Block) bool {
 		*block = b
 		return false
 	}
-	// return
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -377,6 +376,7 @@ func generateCommitBlock(block Block) {
 	}
 }
 
+// TODO change to return true if hash has numLeadingZeroes number of leading '0' (0x30)
 // Returns true if given hash has the minimum number of leading zeroes.  
 func isLeadingNumZeroes(hash []byte) bool {
 	if (numLeadingZeroes == 0) {
@@ -449,7 +449,7 @@ func ParseArguments() (err error) {
 		listenClientIpPort = arguments[5]
 	} else {
 		usage := "Usage: {go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID]" + 
-				 "[listen-node-in IP:port] [listen-client-in IP:port]}"
+				 " [listen-node-in IP:port] [listen-client-in IP:port]}"
 		err = fmt.Errorf(usage)
 	}
 	return
