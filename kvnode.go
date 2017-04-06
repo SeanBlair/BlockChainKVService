@@ -143,6 +143,14 @@ type CommitResponse struct {
 	Err string
 }
 
+type GetChildrenRequest struct {
+	ParentHash string
+}
+
+type GetChildrenResponse struct {
+	Children []string
+}
+
 func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
@@ -198,7 +206,10 @@ func generateBlock(block *Block) bool {
 	data := []byte(fmt.Sprintf("%v", b.HashBlock))
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
-	if isLeadingNumZeroes(hash) {
+	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
+	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
+	// if isLeadingNumZeroes(hash) {
+	if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
 		blockChain[hashString] = b
@@ -219,7 +230,6 @@ func generateBlock(block *Block) bool {
 		*block = b
 		return false
 	}
-	// return
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -265,6 +275,16 @@ func printBlock(blockHash string, depth int) {
 	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash, depth + 1)
 	}
+}
+
+func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse) error {
+	fmt.Println("Received a call to GetChildren with:", req)
+	if req.ParentHash == "" {
+		resp.Children = blockChain[genesisHash].ChildrenHashes
+	} else {
+		resp.Children = blockChain[req.ParentHash].ChildrenHashes
+	}
+	return nil
 }
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
@@ -377,6 +397,22 @@ func generateCommitBlock(block Block) {
 	}
 }
 
+// Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
+func isLeadingNumZeroCharacters(hash []byte) bool {
+	if (numLeadingZeroes == 0) {
+		return true
+	} else {
+		for i := 0; i < numLeadingZeroes; i++ {
+			if rune(hash[i]) == '0' {
+				continue
+			} else {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 // Returns true if given hash has the minimum number of leading zeroes.  
 func isLeadingNumZeroes(hash []byte) bool {
 	if (numLeadingZeroes == 0) {
@@ -449,7 +485,7 @@ func ParseArguments() (err error) {
 		listenClientIpPort = arguments[5]
 	} else {
 		usage := "Usage: {go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID]" + 
-				 "[listen-node-in IP:port] [listen-client-in IP:port]}"
+				 " [listen-node-in IP:port] [listen-client-in IP:port]}"
 		err = fmt.Errorf(usage)
 	}
 	return
