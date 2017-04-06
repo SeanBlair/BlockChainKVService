@@ -35,10 +35,10 @@ import (
 	"os"
 	"strconv"
 	"math"
+	"time"
 )
 
 var (
-	genesisBlock Block
 	genesisHash string
 	leafBlockHash string // TODO: Reconsider naming
 	numLeadingZeroes int 
@@ -62,6 +62,9 @@ var (
 
 	// Maps BlockHash to Block
 	blockChain map[string]Block 
+
+	isGenerateNoOps bool
+	isWorkingOnNoOp bool
 
 	// For debugging...
 	// done chan int
@@ -152,12 +155,71 @@ func main() {
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 	blockChain = make(map[string]Block)
-	genesisBlock = Block{Hash: genesisHash}
-	blockChain[genesisBlock.Hash] = genesisBlock
+	genesisBlock := Block{Hash: genesisHash}
+	blockChain[genesisHash] = genesisBlock
 	leafBlockHash = genesisHash
+	isGenerateNoOps = true
+	isWorkingOnNoOp = false
 	printState()
-
+	go generateNoOpBlocks()
 	listenClientRPCs()
+}
+
+func generateNoOpBlocks() {
+	fmt.Println("In generateNoOpBlocks()")
+	for {
+		if isGenerateNoOps {
+			isWorkingOnNoOp = true
+			generateNoOpBlock()
+			printState()
+			isWorkingOnNoOp = false
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func generateNoOpBlock() {
+	fmt.Println("In generateNoOpBlock()")
+	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
+	for isGenerateNoOps {
+		success := generateBlock(&noOpBlock)
+		if success {
+			return
+		}
+	}
+ 	// received a call to commit which set isGenerateNoOps = false
+	return
+}
+
+
+func generateBlock(block *Block) bool {
+	b := *block
+	data := []byte(fmt.Sprintf("%v", b.HashBlock))
+	sum := sha256.Sum256(data)
+	hash := sum[:] // Converts from [32]byte to []byte
+	if isLeadingNumZeroes(hash) {
+		hashString := string(hash)
+		b.Hash = hashString
+		blockChain[hashString] = b
+			
+		// set previous leaf Block's new child	
+		leafBlock := blockChain[leafBlockHash]
+		leafBlockChildren := leafBlock.ChildrenHashes
+		leafBlockChildren = append(leafBlockChildren, hashString)
+		leafBlock.ChildrenHashes = leafBlockChildren
+		blockChain[leafBlockHash] = leafBlock
+
+		leafBlockHash = hashString
+		
+		// TODO: broadcast Block
+		return true
+	} else {
+		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
+		*block = b
+		return false
+	}
+	// return
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -176,8 +238,33 @@ func printState () {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
 		}
 	}
+	fmt.Println("-blockChain:")
+	printBlockChain()
 	fmt.Println("blockChain size:", len(blockChain))
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
+}
+
+func printBlockChain() {
+	genesisBlock := blockChain[genesisHash]
+	fmt.Printf("GenesisBlockHash: %x\n", genesisBlock.Hash)
+	fmt.Printf("GenesisBlockChildren: %x\n", genesisBlock.ChildrenHashes)
+	for _, childHash := range genesisBlock.ChildrenHashes {
+		printBlock(childHash, 1)
+	}
+}
+
+func printBlock(blockHash string, depth int) {
+	indent := ""
+	for i := 0; i < depth; i++ {
+		indent += " "
+	}
+	block := blockChain[blockHash]
+	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.Txn.ID)
+	fmt.Printf("%sBlockHash :%x\n", indent, block.Hash)
+	fmt.Printf("%sChildrenHashes :%x\n", indent, block.ChildrenHashes)
+	for _, childHash := range block.ChildrenHashes {
+		printBlock(childHash, depth + 1)
+	}
 }
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
@@ -249,15 +336,17 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	if transactions[req.TxID].IsAborted {
 		*resp = CommitResponse{false, 0, abortedMessage}
 	} else {
-		commitId := commit(req)
+		isGenerateNoOps = false
+		for isWorkingOnNoOp {
+			fmt.Println("Commit Waiting for NoOp")
+		}
 		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
-		newBlock = computeHash(newBlock)
-		// Add to blockChain
-		blockChain[newBlock.Hash] = newBlock
-		// TODO: Broadcast newBlock
+		generateCommitBlock(newBlock)
+		commitId := commit(req)
 		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
+	isGenerateNoOps = true
 	return nil
 }
 
@@ -278,21 +367,12 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
-func computeHash(block Block) Block {
-	fmt.Println("Computing Hash...")
-	tempHashBlock := block.HashBlock
+func generateCommitBlock(block Block) {
+	fmt.Println("Computing Commit Hash...")
 	for {
-		data := []byte(fmt.Sprintf("%v", tempHashBlock))
-		fmt.Println("The tempHashBlock:", data)
-		sum := sha256.Sum256(data)
-		hash := sum[:] // Converts from [32]byte to []byte
-		if isLeadingNumZeroes(hash) {
-			block.Hash = string(hash)
-			fmt.Println("The correct hash of tempHashBlock:", hash)
-			block.HashBlock = tempHashBlock
-			return block
-		} else {
-			tempHashBlock.Nonce = tempHashBlock.Nonce + 1
+		success := generateBlock(&block)
+		if success {
+			return
 		}
 	}
 }
