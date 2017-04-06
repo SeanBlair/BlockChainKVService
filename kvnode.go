@@ -29,11 +29,13 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+    "io/ioutil"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
+	"strings"
 	"math"
 	"time"
 )
@@ -42,7 +44,7 @@ var (
 	genesisHash string
 	leafBlockHash string // TODO: Reconsider naming
 	numLeadingZeroes int 
-	nodesFilePath string
+	nodeIPs []string
 	myNodeID int 
 	listenKVNodeIpPort string
 	listenClientIpPort string
@@ -104,8 +106,15 @@ type Transaction struct {
 }
 
 // For registering RPC's
+type KVNode int
 type KVServer int
 
+// KVNode Request and Response structs
+type AddBlockRequest struct {
+	Block Block
+}
+
+// KVClient Request and Response structs
 type NewTransactionResp struct {
 	TxID int
 }
@@ -155,7 +164,7 @@ func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
 	fmt.Println("KVNode's command line arguments are:\ngenesisHash:", genesisHash, 
-		"numLeadingZeroes:", numLeadingZeroes, "nodesFilePath:", nodesFilePath, "myNodeID:", myNodeID, 
+		"numLeadingZeroes:", numLeadingZeroes, "nodesFilePath:", nodeIPs, "myNodeID:", myNodeID, 
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
 	nextTransactionID = 1
@@ -170,6 +179,7 @@ func main() {
 	isWorkingOnNoOp = false
 	printState()
 	go generateNoOpBlocks()
+	go listenNodeRPCs()
 	listenClientRPCs()
 }
 
@@ -212,24 +222,25 @@ func generateBlock(block *Block) bool {
 	if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
-		blockChain[hashString] = b
-			
-		// set previous leaf Block's new child	
-		leafBlock := blockChain[leafBlockHash]
-		leafBlockChildren := leafBlock.ChildrenHashes
-		leafBlockChildren = append(leafBlockChildren, hashString)
-		leafBlock.ChildrenHashes = leafBlockChildren
-		blockChain[leafBlockHash] = leafBlock
-
-		leafBlockHash = hashString
-		
-		// TODO: broadcast Block
+		addToBlockChain(b)
+		broadcastBlock(b)
 		return true
 	} else {
 		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
 		*block = b
 		return false
 	}
+}
+
+// set previous leaf Block's new child	
+func appendLeafChildHash(hash string) {
+	leafBlock := blockChain[leafBlockHash]
+	leafBlockChildren := leafBlock.ChildrenHashes
+	leafBlockChildren = append(leafBlockChildren, hash)
+	leafBlock.ChildrenHashes = leafBlockChildren
+	blockChain[leafBlockHash] = leafBlock
+
+	leafBlockHash = hash
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -387,6 +398,7 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
+
 func generateCommitBlock(block Block) {
 	fmt.Println("Computing Commit Hash...")
 	for {
@@ -441,6 +453,56 @@ func isLeadingNumZeroes(hash []byte) bool {
 	}
 }
 
+func broadcastBlock(block Block) {
+	req := AddBlockRequest{block}
+
+	for i, ip := range nodeIPs {
+		id := i + 1
+		if(id == myNodeID) {
+			continue
+		} else {
+			fmt.Println(id, ip)
+			var resp bool
+			client, err := rpc.Dial("tcp", ip)
+			err = client.Call("KVNode.AddBlock", req, &resp)
+			checkError("Failed KVNode.AddBlock in broadcastBlock()", err, false)
+			if(resp == false) {
+				// TODO: Decide what to do when node fails to accept new block
+			}
+		}
+	}
+}
+
+func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
+	b := req.Block
+	hb := b.HashBlock
+	data := []byte(fmt.Sprintf("%v", hb))
+	fmt.Println("Received HashBlock:", data)
+	sum := sha256.Sum256(data)
+	hash := sum[:] // Converts from [32]byte to []byte
+	*resp = isLeadingNumZeroCharacters(hash)
+	if(*resp == true) {
+		fmt.Println("Received HashBlock: VERIFIED")
+		addToBlockChain(b)
+	} else {
+		fmt.Println("Received HashBlock: FAILED VERIFICATION")
+	}
+	return nil
+}
+
+func addToBlockChain(block Block) {
+// Alternative Method of adding to Blockchain
+	/*	
+		blockChain[block.Hash] = block
+		pBlock := blockChain[block.HashBlock.ParentHash]
+		leafBlockHash = block.Hash
+		pBlock.ChildrenHashes = append(pBlock.ChildrenHashes, block.Hash) 
+		blockChain[block.HashBlock.ParentHash] = pBlock
+	*/
+	blockChain[block.Hash] = block
+	appendLeafChildHash(block.Hash)		
+}
+
 // Looks up the transaction, if it already has key - return. Else, append it to
 // the transaction's KeySet and replace the transaction in the map with it. 
 // (Must replace transaction because it cannot be directly appended) ...Stupid pointer issues
@@ -454,6 +516,21 @@ func appendKeyIfMissing(txID int, k Key) {
 	txn.KeySet = append(txn.KeySet, k)
 	transactions[txID] = txn
 	return
+}
+
+// Infinitely listens and serves KVNode RPC calls
+func listenNodeRPCs() {
+	kvNode := rpc.NewServer()
+	kv := new(KVNode)
+	kvNode.Register(kv)
+	l, err := net.Listen("tcp", listenKVNodeIpPort)
+	checkError("Error in listenNodeRPCs(), net.Listen()", err, true)
+	fmt.Println("Listening for node RPC calls on:", listenKVNodeIpPort)
+	for {
+		conn, err := l.Accept()
+		checkError("Error in listenNodeRPCs(), l.Accept()", err, true)
+		kvNode.ServeConn(conn)
+	}
 }
 
 // Infinitely listens and serves KVServer RPC calls
@@ -478,7 +555,7 @@ func ParseArguments() (err error) {
 		genesisHash = arguments[0]
 		numLeadingZeroes, err = strconv.Atoi(arguments[1])
 		checkError("Error in ParseArguments(), strconv.Atoi(arguments[1]):", err, true)
-		nodesFilePath = arguments[2]
+		nodeIPs = parseNodeFile(arguments[2])
 		myNodeID, err = strconv.Atoi(arguments[3])
 		checkError("Error in ParseArguments(), strconv.Atoi(arguments[3]):", err, true)
 		listenKVNodeIpPort = arguments[4]
@@ -488,6 +565,16 @@ func ParseArguments() (err error) {
 				 " [listen-node-in IP:port] [listen-client-in IP:port]}"
 		err = fmt.Errorf(usage)
 	}
+	return
+}
+
+func parseNodeFile(nodeFile string) (nodeIPs []string) {
+	var err error
+	nodeContent, err := ioutil.ReadFile(nodeFile)
+	checkError("Failed to parse Nodefile: ", err, true)
+	nodeIPs = strings.Split(string(nodeContent), "\n")
+	nodeIPs = nodeIPs[:len(nodeIPs)-1] // Remove empty string
+	fmt.Printf(" Nodes = %v, length = %v\n", nodeIPs, len(nodeIPs))
 	return
 }
 
