@@ -206,7 +206,10 @@ func generateBlock(block *Block) bool {
 	data := []byte(fmt.Sprintf("%v", b.HashBlock))
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
-	if isLeadingNumZeroes(hash) {
+	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
+	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
+	// if isLeadingNumZeroes(hash) {
+	if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
 		blockChain[hashString] = b
@@ -394,7 +397,22 @@ func generateCommitBlock(block Block) {
 	}
 }
 
-// TODO change to return true if hash has numLeadingZeroes number of leading '0' (0x30)
+// Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
+func isLeadingNumZeroCharacters(hash []byte) bool {
+	if (numLeadingZeroes == 0) {
+		return true
+	} else {
+		for i := 0; i < numLeadingZeroes; i++ {
+			if rune(hash[i]) == '0' {
+				continue
+			} else {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 // Returns true if given hash has the minimum number of leading zeroes.  
 func isLeadingNumZeroes(hash []byte) bool {
 	if (numLeadingZeroes == 0) {
