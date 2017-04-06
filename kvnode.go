@@ -143,6 +143,14 @@ type CommitResponse struct {
 	Err string
 }
 
+type GetChildrenRequest struct {
+	ParentHash string
+}
+
+type GetChildrenResponse struct {
+	Children []string
+}
+
 func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
@@ -264,6 +272,16 @@ func printBlock(blockHash string, depth int) {
 	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash, depth + 1)
 	}
+}
+
+func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse) error {
+	fmt.Println("Received a call to GetChildren with:", req)
+	if req.ParentHash == "" {
+		resp.Children = blockChain[genesisHash].ChildrenHashes
+	} else {
+		resp.Children = blockChain[req.ParentHash].ChildrenHashes
+	}
+	return nil
 }
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID

@@ -137,6 +137,14 @@ type CommitResponse struct {
 	CommitID int
 	Err string
 }
+
+type GetChildrenRequest struct {
+	ParentHash string
+}
+
+type GetChildrenResponse struct {
+	Children []string
+}
 /////////////////////////////////////////////
 
 
@@ -171,10 +179,18 @@ func getNewTransactionID() int {
 	return resp.TxID
 }
 
-// Stub
+// 
 func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
-	fmt.Println("kvservice received a call to GetChildren(", node, parentHash, ")")
-	return []string{"TODO: implement GetChildren", "First Child", "Second Child"}
+	fmt.Printf("kvservice received a call to GetChildren  %s  %x\n", node, parentHash)	
+	req := GetChildrenRequest{parentHash}
+	var resp GetChildrenResponse
+	client, err := rpc.Dial("tcp", node)
+	checkError("Error in GetChildren(), rpc.Dial():", err, true)
+	err = client.Call("KVServer.GetChildren", req, &resp)
+	checkError("Error in GetChildren(), client.Call():", err, true)
+	err = client.Close()
+	checkError("Error in GetChildren(), client.Close():", err, true)
+	return resp.Children
 }
 
 // Stub
