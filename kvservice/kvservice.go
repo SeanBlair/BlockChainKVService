@@ -221,22 +221,15 @@ func (c *myconn) Close() {
 // Returns the Value associated with the given Key
 func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 	fmt.Println("kvservice received a call to Get(", k, ")")
-	success, v, err = get(t.ID, k)
-	return
-}
-
-// Calls KVServer.Get RPC for the value associated with the given
-// Key and transaction txid 
-func get(txid int, k Key) (success bool, v Value, err error) {
-	req := GetRequest{txid, k}
-	var resp GetResponse
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
-	checkError("Error in get(), rpc.Dial():", err, true)
-	err = client.Call("KVServer.Get", req, &resp)
-	checkError("Error in get(), client.Call():", err, true)
-	err = client.Close()
-	checkError("Error in get(), client.Close():", err, true)
-	return resp.Success, resp.Val, errors.New(resp.Err)
+	if currentTransaction.IsAborted {
+		return false, "", errors.New(abortedMessage)
+	} else {
+		val, ok := currentTransaction.PutSet[k]
+		if !ok {
+			val = originalKeyValueStore[k]
+		}
+		return true, val, nil	
+	}
 }
 
 // Associates Value v with Key k in the system

@@ -29,8 +29,8 @@ func main() {
 	success, err := t1.Put("A", "T1")
 	fmt.Printf("Put returned: %v, %v\n", success, err)
 
-	// success, v, err := t1.Get("A")
-	// fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
+	success, v, err := t1.Get("A")
+	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
 	// success, txID, err := t1.Commit(0)
 	// fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)

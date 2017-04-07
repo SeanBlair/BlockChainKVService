@@ -339,30 +339,6 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	return nil
 }
 
-// Returns the Value corresponding to the given Key and to the given transaction's
-// previous Put calls. Returns "" if key does not exist, and false
-// if transaction is aborted.
-func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
-	fmt.Println("Received a call to Get(", req, ")")
-	if transactions[req.TxID].IsAborted {
-		*resp = GetResponse{false, "", abortedMessage}
-	} else {
-		val := getValue(req)
-		*resp = GetResponse{true, val, ""}
-	}
-	return nil
-}
-
-// Returns the given Key's value by first checking in the given transaction's PutSet,
-// otherwise retrieves it from the keyValueStore. Returns "" if key does not exist
-func getValue(req GetRequest) (val Value) {
-	val, ok := transactions[req.TxID].PutSet[req.K]
-	if !ok {
-		val = keyValueStore[req.K]
-	}
-	return
-}
-
 // Sets the IsAborted field, of transaction with id == txid, to true
 func (p *KVServer) Abort(txid int, resp *bool) error {
 	fmt.Println("Received a call to Abort(", txid, ")")
