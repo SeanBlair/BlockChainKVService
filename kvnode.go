@@ -213,6 +213,8 @@ func generateBlock(block *Block) bool {
 	// if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
+		// TODO make sure this is true!!!
+		b.IsOnLongestBranch = true
 		blockChain[hashString] = b
 			
 		// set previous leaf Block's new child	
@@ -220,7 +222,6 @@ func generateBlock(block *Block) bool {
 		leafBlockChildren := leafBlock.ChildrenHashes
 		leafBlockChildren = append(leafBlockChildren, hashString)
 		leafBlock.ChildrenHashes = leafBlockChildren
-		leafBlock.IsOnLongestBranch = true
 		blockChain[leafBlockHash] = leafBlock
 
 		leafBlockHash = hashString
@@ -362,15 +363,14 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		for isWorkingOnNoOp {
 			fmt.Println("Commit Waiting for NoOp")
 		}
-		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
-		generateCommitBlock(newBlock)
+		generateCommitBlock(req.TxID)
 		// TODO check that it is on longest block...
 		// else: regenerate on correct branch??
 		// TODO give correct commitID... 
 		commitId := commit(req)
-		// *resp = CommitResponse{true, commitId, ""}
+		*resp = CommitResponse{true, commitId, ""}
 		// spawn new thread to allow noOps and other commit blocks to be added
-		*resp = validateCommit(req, commitId, newBlock)
+		// *resp = validateCommit(req, commitId, newBlock)
 	}
 	printState()
 	isGenerateNoOps = true
@@ -421,8 +421,9 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
-func generateCommitBlock(block Block) {
+func generateCommitBlock(txid int) {
 	fmt.Println("Computing Commit Hash...")
+	block := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }
 	for {
 		success := generateBlock(&block)
 		if success {
