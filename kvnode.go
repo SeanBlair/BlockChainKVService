@@ -89,6 +89,7 @@ type Block struct {
 	Hash string
 	ChildrenHashes []string
 	HashBlock HashBlock
+	IsOnLongestBranch bool
 }
 
 type Transaction struct {
@@ -208,8 +209,8 @@ func generateBlock(block *Block) bool {
 	hash := sum[:] // Converts from [32]byte to []byte
 	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
-	// if isLeadingNumZeroes(hash) {
-	if isLeadingNumZeroCharacters(hash) {
+	if isLeadingNumZeroes(hash) {
+	// if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
 		blockChain[hashString] = b
@@ -219,6 +220,7 @@ func generateBlock(block *Block) bool {
 		leafBlockChildren := leafBlock.ChildrenHashes
 		leafBlockChildren = append(leafBlockChildren, hashString)
 		leafBlock.ChildrenHashes = leafBlockChildren
+		leafBlock.IsOnLongestBranch = true
 		blockChain[leafBlockHash] = leafBlock
 
 		leafBlockHash = hashString
@@ -362,12 +364,44 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		}
 		newBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[req.TxID], NodeID: myNodeID, Nonce: 0} }
 		generateCommitBlock(newBlock)
+		// TODO check that it is on longest block...
+		// else: regenerate on correct branch??
+		// TODO give correct commitID... 
 		commitId := commit(req)
-		*resp = CommitResponse{true, commitId, ""}
+		// *resp = CommitResponse{true, commitId, ""}
+		// spawn new thread to allow noOps and other commit blocks to be added
+		*resp = validateCommit(req, commitId, newBlock)
 	}
 	printState()
 	isGenerateNoOps = true
 	return nil
+}
+
+func validateCommit(req CommitRequest, commitId int, newBlock Block) (resp CommitResponse) {
+	for {
+		if isBlockValidated(newBlock, req.ValidateNum) {
+			return CommitResponse{true, commitId, ""}
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+func isBlockValidated(block Block, validateNum int) bool {
+	if !block.IsOnLongestBranch {
+		return false
+	} else {
+		if validateNum == 0 {
+			return true
+		} else {
+			for _, child := range block.ChildrenHashes {
+				if isBlockValidated(blockChain[child], validateNum - 1) {
+					return true
+				}
+			}
+			return false
+		}
+	}
 }
 
 // Adds all values in the given transaction's PutSet into the keyValueStore.
