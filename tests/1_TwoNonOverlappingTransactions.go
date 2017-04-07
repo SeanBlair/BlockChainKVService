@@ -26,8 +26,8 @@ func main() {
 	t1, err := c.NewTX()
 	fmt.Printf("NewTX returned: %v, %v\n", t1, err)
 
-	// success, err := t1.Put("A", "T1")
-	// fmt.Printf("Put returned: %v, %v\n", success, err)
+	success, err := t1.Put("A", "T1")
+	fmt.Printf("Put returned: %v, %v\n", success, err)
 
 	// success, v, err := t1.Get("A")
 	// fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)

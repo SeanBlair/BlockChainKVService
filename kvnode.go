@@ -105,7 +105,7 @@ type Transaction struct {
 	// For storing this transaction's Puts before it commits.
 	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
-	KeySet []Key
+	KeySet map[Key]bool
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
@@ -275,6 +275,10 @@ func printState () {
 		for k := range tx.PutSet {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
 		}
+		fmt.Println("    KeySet:")
+		for k := range tx.KeySet {
+			fmt.Println("      Key:", k)
+		}
 	}
 	fmt.Println("-blockChain:")
 	printBlockChain()
@@ -335,21 +339,6 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	return nil
 }
 
-// Returns false if the given transaction is aborted, otherwise adds a Put record 
-// to the given transaction's PutSet, 
-func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
-	fmt.Println("Received a call to Put(", req, ")")
-	if transactions[req.TxID].IsAborted {
-		*resp = PutResponse{false, abortedMessage}
-	} else {
-		transactions[req.TxID].PutSet[req.K] = req.Val 
-		appendKeyIfMissing(req.TxID, req.K)
-		*resp = PutResponse{true, ""}	
-	}
-	printState()
-	return nil
-}
-
 // Returns the Value corresponding to the given Key and to the given transaction's
 // previous Put calls. Returns "" if key does not exist, and false
 // if transaction is aborted.
@@ -358,7 +347,6 @@ func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
 	if transactions[req.TxID].IsAborted {
 		*resp = GetResponse{false, "", abortedMessage}
 	} else {
-		appendKeyIfMissing(req.TxID, req.K)
 		val := getValue(req)
 		*resp = GetResponse{true, val, ""}
 	}
@@ -566,21 +554,6 @@ func addToBlockChain(block Block) {
 	*/
 	blockChain[block.Hash] = block
 	appendLeafChildHash(block.Hash)		
-}
-
-// Looks up the transaction, if it already has key - return. Else, append it to
-// the transaction's KeySet and replace the transaction in the map with it. 
-// (Must replace transaction because it cannot be directly appended) ...Stupid pointer issues
-func appendKeyIfMissing(txID int, k Key) {
-	txn := transactions[txID]
-	for _, key := range txn.KeySet {
-		if key == k {
-			return
-		}
-	}
-	txn.KeySet = append(txn.KeySet, k)
-	transactions[txID] = txn
-	return
 }
 
 // Infinitely listens and serves KVNode RPC calls

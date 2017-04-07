@@ -27,6 +27,7 @@ var (
 	kvnodeIpPorts []string
 	currentTransaction Transaction
 	originalKeyValueStore map[Key]Value
+	abortedMessage string = "This transaction is aborted!!"
 )
 
 type Transaction struct {
@@ -34,7 +35,7 @@ type Transaction struct {
 	// For storing this transaction's Puts before it commits.
 	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
-	KeySet []Key
+	KeySet map[Key]bool
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
@@ -191,7 +192,7 @@ func getNewTransactionID() int {
 	err = client.Close()
 	checkError("Error in getNewTransactionID(), client.Close():", err, true)
 
-	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), []Key{}, false, false, 0}
+	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
 	originalKeyValueStore = resp.KeyValueStore
 	printState()
 
@@ -239,23 +240,16 @@ func get(txid int, k Key) (success bool, v Value, err error) {
 }
 
 // Associates Value v with Key k in the system
-func (t *mytx) Put(k Key, v Value) (success bool, err error) {
+func (t *mytx) Put(k Key, v Value) (bool, error) {
 	fmt.Println("kvservice received a call to Put(", k, v, ")")
-	success, err = put(t.ID, k, v)
-	return
-}
-
-// Calls KVServer.Put RPC to associate k and v with transaction txid
-func put(txid int, k Key, v Value) (success bool, err error) {
-	req := PutRequest{txid, k, v}
-	var resp PutResponse
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
-	checkError("Error in put(), rpc.Dial():", err, true)
-	err = client.Call("KVServer.Put", req, &resp)
-	checkError("Error in put(), client.Call():", err, true)
-	err = client.Close()
-	checkError("Error in put(), client.Close():", err, true)
-	return resp.Success, errors.New(resp.Err)
+	if currentTransaction.IsAborted {
+		return false, errors.New(abortedMessage)
+	} else {
+		currentTransaction.PutSet[k] = v 
+		currentTransaction.KeySet[k] = true
+ 		printState()
+		return true, nil
+	}
 }
 
 // Commits a transaction
@@ -304,6 +298,10 @@ func printState () {
 	fmt.Println("    PutSet:")
 	for k := range tx.PutSet {
 		fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
+	}
+	fmt.Println("    KeySet:")
+	for k := range tx.KeySet {
+		fmt.Println("      Key:", k)
 	}
 }
 
