@@ -185,7 +185,7 @@ func main() {
 	isWorkingOnNoOp = false
 	printState()
 	go generateNoOpBlocks()
-	go listenNodeRPCs()
+	listenNodeRPCs()
 	listenClientRPCs()
 }
 
@@ -196,7 +196,7 @@ func generateNoOpBlocks() {
 		if isGenerateNoOps {
 			isWorkingOnNoOp = true
 			generateNoOpBlock()
-			printState()
+		//	printState()
 			isWorkingOnNoOp = false
 		} else {
 			time.Sleep(time.Second)
@@ -541,10 +541,9 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	b := req.Block
 	hb := b.HashBlock
 	data := []byte(fmt.Sprintf("%v", hb))
-	fmt.Println("Received HashBlock:", data)
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
-	*resp = isLeadingNumZeroCharacters(hash)
+	*resp = isLeadingNumZeroes(hash)
 	if(*resp == true) {
 		fmt.Println("Received HashBlock: VERIFIED")
 		addToBlockChain(b)
@@ -593,7 +592,9 @@ func listenNodeRPCs() {
 	for {
 		conn, err := l.Accept()
 		checkError("Error in listenNodeRPCs(), l.Accept()", err, true)
-		kvNode.ServeConn(conn)
+		go func() {
+			kvNode.ServeConn(conn)
+		}()
 	}
 }
 
