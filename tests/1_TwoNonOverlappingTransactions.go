@@ -20,7 +20,7 @@ func main() {
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
 
-	children := c.GetChildren("nodeIpPort", "parentHash")
+	children := c.GetChildren(nodes[0], "parentHash")
 	fmt.Printf("GetChildren returned: %v\n", children) 
 
 	t1, err := c.NewTX()
@@ -32,7 +32,7 @@ func main() {
 	success, v, err := t1.Get("A")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	success, txID, err := t1.Commit(1)
+	success, txID, err := t1.Commit(7)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	t2, err := c.NewTX()
@@ -44,7 +44,7 @@ func main() {
 	success, v, err = t2.Get("B")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	success, txID, err = t2.Commit(1)
+	success, txID, err = t2.Commit(2)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	c.Close()
