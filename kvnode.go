@@ -184,9 +184,10 @@ func main() {
 	isGenerateNoOps = true
 	isWorkingOnNoOp = false
 	printState()
-	go generateNoOpBlocks()
-	listenNodeRPCs()
-	listenClientRPCs()
+	go listenNodeRPCs()
+	go listenClientRPCs()
+	time.Sleep(4 * time.Second)
+	generateNoOpBlocks()
 }
 
 // Generates NoOp Blocks and adds to blockChain when not generating a Commit Block
@@ -538,6 +539,7 @@ func broadcastBlock(block Block) {
 }
 
 func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
+	
 	b := req.Block
 	hb := b.HashBlock
 	data := []byte(fmt.Sprintf("%v", hb))
@@ -592,9 +594,7 @@ func listenNodeRPCs() {
 	for {
 		conn, err := l.Accept()
 		checkError("Error in listenNodeRPCs(), l.Accept()", err, true)
-		go func() {
-			kvNode.ServeConn(conn)
-		}()
+		kvNode.ServeConn(conn)
 	}
 }
 
