@@ -63,7 +63,9 @@ var (
 	// Maps BlockHash to Block
 	blockChain map[string]Block 
 
+	// true when not generating Commit Blocks
 	isGenerateNoOps bool
+	// true when busy working on NoOp Block
 	isWorkingOnNoOp bool
 
 	// For debugging...
@@ -78,13 +80,16 @@ type Key string
 // Represent a value in the system.
 type Value string
 
+// A block in the blockChain
 type Block struct {
+	// hash of HashBlock field
 	Hash string
 	ChildrenHashes []string
 	IsOnLongestBranch bool
 	HashBlock HashBlock
 }
 
+// The part of a Block that gets hashed
 type HashBlock struct {
 	ParentHash string
 	Txn Transaction
@@ -174,6 +179,7 @@ func main() {
 	listenClientRPCs()
 }
 
+// Generates NoOp Blocks and adds to blockChain when not generating a Commit Block
 func generateNoOpBlocks() {
 	fmt.Println("In generateNoOpBlocks()")
 	for {
@@ -188,6 +194,8 @@ func generateNoOpBlocks() {
 	}
 }
 
+// While isGenerateNoOps, works on adding NoOps to the blockChain
+// Returns either when isGenerateNoOps = false or successfully generates 1 NoOp
 func generateNoOpBlock() {
 	fmt.Println("In generateNoOpBlock()")
 	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
@@ -201,7 +209,8 @@ func generateNoOpBlock() {
 	return
 }
 
-
+// Hashes the given Block's HashBlock once, if has sufficient leading zeroes, adds it 
+// to blockChain, returns true and the hash. Otherwise, increments the Nonce and returns false, ""
 func generateBlock(block *Block) (bool, string) {
 	b := *block
 	data := []byte(fmt.Sprintf("%v", b.HashBlock))
@@ -214,6 +223,7 @@ func generateBlock(block *Block) (bool, string) {
 		hashString := string(hash)
 		b.Hash = hashString
 		// TODO make sure this is true!!!
+		// have to implement fork support and longest branch identification...
 		b.IsOnLongestBranch = true
 		blockChain[hashString] = b
 			
@@ -235,7 +245,7 @@ func generateBlock(block *Block) (bool, string) {
 	}
 }
 
-// For visualizing the current state of a kvnode's keyValueStore and transactions maps
+// For visualizing the current state of a kvnode's keyValueStore, transactions and blockChain maps
 func printState () {
 	fmt.Println("\nKVNODE STATE:")
 	fmt.Println("-keyValueStore:")
@@ -257,6 +267,7 @@ func printState () {
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
 }
 
+// Prints the blockChain to console
 func printBlockChain() {
 	genesisBlock := blockChain[genesisHash]
 	fmt.Printf("GenesisBlockHash: %x\n", genesisBlock.Hash)
@@ -266,6 +277,7 @@ func printBlockChain() {
 	}
 }
 
+// Prints one block in the blockChain to console
 func printBlock(blockHash string, depth int) {
 	indent := ""
 	for i := 0; i < depth; i++ {
@@ -287,6 +299,7 @@ func printBlock(blockHash string, depth int) {
 	}
 }
 
+// Returns the children hashes of the Block that has the given hash as key in the blockChain
 func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse) error {
 	fmt.Println("Received a call to GetChildren with:", req)
 	if req.ParentHash == "" {
@@ -376,22 +389,26 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		// TODO give correct commitID... 
 		commitId := commit(req)
 		isGenerateNoOps = true
-		*resp = validateCommit(req, commitId, blockHash)
+		validateCommit(req, blockHash)
+		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
 	return nil
 }
 
-func validateCommit(req CommitRequest, commitId int, blockHash string) (resp CommitResponse) {
+// Waits until the Block with given blockHash has the correct number of descendant Blocks
+func validateCommit(req CommitRequest, blockHash string) {
 	for {
 		if isBlockValidated(blockChain[blockHash], req.ValidateNum) {
-			return CommitResponse{true, commitId, ""}
+			return
 		} else {
 			time.Sleep(time.Second)
 		}
 	}
 }
 
+// Recursively traverses the longest branch of the blockChain tree starting at the given block,
+// if there are at least validateNum descendents returns true, else returns false  
 func isBlockValidated(block Block, validateNum int) bool {
 	if !block.IsOnLongestBranch {
 		return false
@@ -426,8 +443,10 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
+// Adds a Commit Block with transaction txid to the blockChain, 
+// returns its hash
 func generateCommitBlock(txid int) string {
-	fmt.Println("Computing Commit Hash...")
+	fmt.Println("Generating a Commit Block...")
 	block := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }
 	for {
 		success, blockHash := generateBlock(&block)
@@ -438,6 +457,7 @@ func generateCommitBlock(txid int) string {
 }
 
 // Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
+// This is the correct implementation provided by the assignment specifications.
 func isLeadingNumZeroCharacters(hash []byte) bool {
 	if (numLeadingZeroes == 0) {
 		return true
@@ -453,7 +473,10 @@ func isLeadingNumZeroCharacters(hash []byte) bool {
 	}
 }
 
-// Returns true if given hash has the minimum number of leading zeroes.  
+// Returns true if given hash has the minimum number of leading zeroes.
+// This is incorrect given the assignment specs, but is useful for debugging
+// as it provides more control over different amounts of proof-of-work required.
+// TODO: make sure this is not used in the final code!!  
 func isLeadingNumZeroes(hash []byte) bool {
 	if (numLeadingZeroes == 0) {
 		return true
