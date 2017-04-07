@@ -267,14 +267,7 @@ func commit(txid int, validateNum int) (success bool, commitID int, err error) {
 
 // Calls KVServer.Abort to abort the given transaction
 func (t *mytx) Abort() {
-	var resp bool
-	fmt.Println("kvservice received a call to Abort()")
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
-	checkError("Error in Abort(), rpc.Dial():", err, true)
-	err = client.Call("KVServer.Abort", t.ID, &resp)
-	checkError("Error in Abort(), client.Call():", err, true)
-	err = client.Close()
-	checkError("Error in Abort(), client.Close():", err, true)
+	currentTransaction.IsAborted = true
 	return	
 }
 

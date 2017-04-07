@@ -339,17 +339,6 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	return nil
 }
 
-// Sets the IsAborted field, of transaction with id == txid, to true
-func (p *KVServer) Abort(txid int, resp *bool) error {
-	fmt.Println("Received a call to Abort(", txid, ")")
-	tx := transactions[txid]
-	tx.IsAborted = true
-	transactions[txid] = tx
-	*resp = true
-	printState()
-	return nil
-}
-
 // If the given transaction is aborted returns false, otherwise commits the transaction,
 // and returns its CommitID value, 
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
