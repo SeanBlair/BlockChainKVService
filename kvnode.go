@@ -196,7 +196,7 @@ func generateNoOpBlocks() {
 		if isGenerateNoOps {
 			isWorkingOnNoOp = true
 			generateNoOpBlock()
-		//	printState()
+			printState()
 			isWorkingOnNoOp = false
 		} else {
 			time.Sleep(time.Second)
