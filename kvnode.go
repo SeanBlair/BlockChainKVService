@@ -78,18 +78,18 @@ type Key string
 // Represent a value in the system.
 type Value string
 
+type Block struct {
+	Hash string
+	ChildrenHashes []string
+	IsOnLongestBranch bool
+	HashBlock HashBlock
+}
+
 type HashBlock struct {
 	ParentHash string
 	Txn Transaction
 	NodeID int
 	Nonce uint32
-}
-
-type Block struct {
-	Hash string
-	ChildrenHashes []string
-	HashBlock HashBlock
-	IsOnLongestBranch bool
 }
 
 type Transaction struct {
@@ -273,8 +273,15 @@ func printBlock(blockHash string, depth int) {
 	}
 	block := blockChain[blockHash]
 	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.Txn.ID)
-	fmt.Printf("%sBlockHash :%x\n", indent, block.Hash)
-	fmt.Printf("%sChildrenHashes :%x\n", indent, block.ChildrenHashes)
+	fmt.Printf("%sBlock.Hash :%x\n", indent, block.Hash)
+	fmt.Printf("%sBlock.ChildrenHashes :%x\n", indent, block.ChildrenHashes)
+	fmt.Printf("%sBlock.IsOnLongestBranch :%v\n", indent, block.IsOnLongestBranch)
+	hashBlock := block.HashBlock
+	fmt.Printf("%sBlock.HashBlock.ParentHash :%x\n", indent, hashBlock.ParentHash)
+	fmt.Printf("%sBlock.HashBlock.Txn :%v\n", indent, hashBlock.Txn)
+	fmt.Printf("%sBlock.HashBlock.NodeID :%v\n", indent, hashBlock.NodeID)
+	fmt.Printf("%sBlock.HashBlock.Nonce :%x\n\n", indent, hashBlock.Nonce)
+
 	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash, depth + 1)
 	}
@@ -368,12 +375,13 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		// else: regenerate on correct branch??
 		// TODO give correct commitID... 
 		commitId := commit(req)
+		isGenerateNoOps = true
 		*resp = CommitResponse{true, commitId, ""}
 		// spawn new thread to allow noOps and other commit blocks to be added
 		// *resp = validateCommit(req, commitId, newBlock)
 	}
 	printState()
-	isGenerateNoOps = true
+	// isGenerateNoOps = true
 	return nil
 }
 
