@@ -123,6 +123,7 @@ type AddBlockRequest struct {
 // KVClient Request and Response structs
 type NewTransactionResp struct {
 	TxID int
+	KeyValueStore map[Key]Value
 }
 
 type PutRequest struct {
@@ -329,8 +330,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID++
-	transactions[txID] = Transaction{txID, make(map[Key]Value), []Key{}, false, false, 0}
-	*resp = NewTransactionResp{txID}
+	*resp = NewTransactionResp{txID, keyValueStore}
 	printState()
 	return nil
 }

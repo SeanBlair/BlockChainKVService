@@ -25,7 +25,20 @@ import (
 
 var (
 	kvnodeIpPorts []string
+	currentTransaction Transaction
+	originalKeyValueStore map[Key]Value
 )
+
+type Transaction struct {
+	ID int
+	// For storing this transaction's Puts before it commits.
+	// On commit, they will be added to the keyValueStore
+	PutSet map[Key]Value
+	KeySet []Key
+	IsAborted bool
+	IsCommitted bool
+	CommitID int
+}
 
 // Represents a key in the system.
 type Key string
@@ -103,6 +116,7 @@ type mytx struct {
 // RPC structs /////////////////////////////
 type NewTransactionResp struct {
 	TxID int
+	KeyValueStore map[Key]Value
 }
 
 type PutRequest struct {
@@ -176,6 +190,11 @@ func getNewTransactionID() int {
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in getNewTransactionID(), client.Close():", err, true)
+
+	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), []Key{}, false, false, 0}
+	originalKeyValueStore = resp.KeyValueStore
+	printState()
+
 	return resp.TxID
 }
 
@@ -270,6 +289,22 @@ func (t *mytx) Abort() {
 	err = client.Close()
 	checkError("Error in Abort(), client.Close():", err, true)
 	return	
+}
+
+// For visualizing the current state of kvservice's originalKeyValueStore map and currentTransaction
+func printState () {
+	fmt.Println("\nKVSERVICE STATE:")
+	fmt.Println("-originalKeyValueStore:")
+	for k := range originalKeyValueStore {
+		fmt.Println("    Key:", k, "Value:", originalKeyValueStore[k])
+	}
+	fmt.Println("-currentTransaction:")
+	tx := currentTransaction
+	fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
+	fmt.Println("    PutSet:")
+	for k := range tx.PutSet {
+		fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
+	}
 }
 
 // Prints msg + err to console and exits program if exit == true
