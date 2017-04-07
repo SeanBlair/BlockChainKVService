@@ -197,7 +197,7 @@ func generateNoOpBlocks() {
 // While isGenerateNoOps, works on adding NoOps to the blockChain
 // Returns either when isGenerateNoOps = false or successfully generates 1 NoOp
 func generateNoOpBlock() {
-	fmt.Println("In generateNoOpBlock()")
+	fmt.Println("Generating a NoOp Block...")
 	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
 	for isGenerateNoOps {
 		success, _ := generateBlock(&noOpBlock)
