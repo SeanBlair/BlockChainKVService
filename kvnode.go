@@ -192,7 +192,7 @@ func generateNoOpBlock() {
 	fmt.Println("In generateNoOpBlock()")
 	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
 	for isGenerateNoOps {
-		success := generateBlock(&noOpBlock)
+		success, _ := generateBlock(&noOpBlock)
 		if success {
 			return
 		}
@@ -202,7 +202,7 @@ func generateNoOpBlock() {
 }
 
 
-func generateBlock(block *Block) bool {
+func generateBlock(block *Block) (bool, string) {
 	b := *block
 	data := []byte(fmt.Sprintf("%v", b.HashBlock))
 	sum := sha256.Sum256(data)
@@ -227,11 +227,11 @@ func generateBlock(block *Block) bool {
 		leafBlockHash = hashString
 		
 		// TODO: broadcast Block
-		return true
+		return true, hashString
 	} else {
 		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
 		*block = b
-		return false
+		return false, ""
 	}
 }
 
@@ -370,24 +370,21 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		for isWorkingOnNoOp {
 			fmt.Println("Commit Waiting for NoOp")
 		}
-		generateCommitBlock(req.TxID)
+		blockHash := generateCommitBlock(req.TxID)
 		// TODO check that it is on longest block...
 		// else: regenerate on correct branch??
 		// TODO give correct commitID... 
 		commitId := commit(req)
 		isGenerateNoOps = true
-		*resp = CommitResponse{true, commitId, ""}
-		// spawn new thread to allow noOps and other commit blocks to be added
-		// *resp = validateCommit(req, commitId, newBlock)
+		*resp = validateCommit(req, commitId, blockHash)
 	}
 	printState()
-	// isGenerateNoOps = true
 	return nil
 }
 
-func validateCommit(req CommitRequest, commitId int, newBlock Block) (resp CommitResponse) {
+func validateCommit(req CommitRequest, commitId int, blockHash string) (resp CommitResponse) {
 	for {
-		if isBlockValidated(newBlock, req.ValidateNum) {
+		if isBlockValidated(blockChain[blockHash], req.ValidateNum) {
 			return CommitResponse{true, commitId, ""}
 		} else {
 			time.Sleep(time.Second)
@@ -429,13 +426,13 @@ func commit(req CommitRequest) (commitId int) {
 	return
 }
 
-func generateCommitBlock(txid int) {
+func generateCommitBlock(txid int) string {
 	fmt.Println("Computing Commit Hash...")
 	block := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }
 	for {
-		success := generateBlock(&block)
+		success, blockHash := generateBlock(&block)
 		if success {
-			return
+			return blockHash
 		}
 	}
 }
