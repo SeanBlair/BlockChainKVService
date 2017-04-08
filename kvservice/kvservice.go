@@ -120,30 +120,9 @@ type NewTransactionResp struct {
 	KeyValueStore map[Key]Value
 }
 
-type PutRequest struct {
-	TxID int
-	K Key
-	Val Value
-}
-
-type PutResponse struct {
-	Success bool
-	Err string
-}
-
-type GetRequest struct {
-	TxID int
-	K Key
-}
-
-type GetResponse struct {
-	Success bool
-	Val Value
-	Err string	
-}
-
 type CommitRequest struct {
-	TxID int
+	Transaction Transaction
+	RequiredKeyValues map[Key]Value
 	ValidateNum int
 }
 
@@ -228,6 +207,8 @@ func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 		if !ok {
 			val = originalKeyValueStore[k]
 		}
+		currentTransaction.KeySet[k] = true
+		printState()
 		return true, val, nil	
 	}
 }
@@ -248,13 +229,24 @@ func (t *mytx) Put(k Key, v Value) (bool, error) {
 // Commits a transaction
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
-	success, commitID, err = commit(t.ID, validateNum)
+	if currentTransaction.IsAborted {
+		return false, 0, errors.New(abortedMessage)
+	} else {
+		success, commitID, err = commit(validateNum)
+		if success {
+			currentTransaction.IsCommitted = true
+			currentTransaction.CommitID = commitID
+		}	
+	}
+	printState()
 	return
 }
 
 // Calls KVServer.Commit RPC to start the process of committing transaction txid
-func commit(txid int, validateNum int) (success bool, commitID int, err error) {
-	req := CommitRequest{txid, validateNum}
+func commit(validateNum int) (success bool, commitID int, err error) {
+	requiredKeyValues := getRequiredKeyValues()
+	fmt.Println("requiredKeyValues:", requiredKeyValues)
+	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
 	var resp CommitResponse
 	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
 	checkError("Error in commit(), rpc.Dial():", err, true)
@@ -265,9 +257,20 @@ func commit(txid int, validateNum int) (success bool, commitID int, err error) {
 	return resp.Success, resp.CommitID, errors.New(resp.Err)
 }
 
+// Creates map of the original values that keys in KeySet had in originalKeyValueStore
+// If they did not exist adds ""
+func getRequiredKeyValues() map[Key]Value {
+	kvMap := make(map[Key]Value)
+	for k := range currentTransaction.KeySet {
+		kvMap[k] = originalKeyValueStore[k]	
+	}
+	return kvMap
+}
+
 // Calls KVServer.Abort to abort the given transaction
 func (t *mytx) Abort() {
 	currentTransaction.IsAborted = true
+	printState()
 	return	
 }
 

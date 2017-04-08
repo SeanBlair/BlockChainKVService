@@ -123,33 +123,14 @@ type AddBlockRequest struct {
 // KVClient Request and Response structs
 type NewTransactionResp struct {
 	TxID int
+	// The keyValueStore state on call to NewTX
 	KeyValueStore map[Key]Value
 }
 
-type PutRequest struct {
-	TxID int
-	K Key
-	Val Value
-}
-
-type PutResponse struct {
-	Success bool
-	Err string
-}
-
-type GetRequest struct {
-	TxID int
-	K Key
-}
-
-type GetResponse struct {
-	Success bool
-	Val Value
-	Err string	
-}
-
 type CommitRequest struct {
-	TxID int
+	Transaction Transaction
+	// The original values in keyValueStore of keys that the transaction touched
+	RequiredKeyValues map[Key]Value
 	ValidateNum int
 }
 
@@ -343,24 +324,48 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 // and returns its CommitID value, 
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
-	if transactions[req.TxID].IsAborted {
+	tx := req.Transaction
+	transactions[tx.ID] = tx
+	isGenerateNoOps = false
+	for isWorkingOnNoOp {
+		fmt.Println("Commit Waiting for NoOp...")
+	}
+	if !isCommitPossible(req.RequiredKeyValues) {
+		t := transactions[tx.ID]
+		t.IsAborted = true
+		transactions[tx.ID] = t
 		*resp = CommitResponse{false, 0, abortedMessage}
+		isGenerateNoOps = true
 	} else {
-		isGenerateNoOps = false
-		for isWorkingOnNoOp {
-			fmt.Println("Commit Waiting for NoOp")
-		}
-		blockHash := generateCommitBlock(req.TxID)
+		txn := transactions[tx.ID]
+		txn.IsCommitted = true
+		transactions[tx.ID] = txn
+		// TODO set transaction id?? (Parent Depth + 1??)
+		blockHash := generateCommitBlock(tx.ID)
 		// TODO check that it is on longest block...
 		// else: regenerate on correct branch??
 		// TODO give correct commitID... 
-		commitId := commit(req)
+		commitId := commit(tx.ID)
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
 	return nil
+}
+
+// Returns true if keyValueStore has the same values for the keys of requiredKeyValues
+// This means the keyValueStore has the same values it had when the transaction started.
+func isCommitPossible(requiredKeyValues map[Key]Value) bool {
+	for k := range requiredKeyValues {
+		val, ok := keyValueStore[k]
+		if ok && val != requiredKeyValues[k] {
+			return false
+		} else if !ok && val != "" {
+			return false	
+		}
+	}
+	return true
 }
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
@@ -396,8 +401,8 @@ func isBlockValidated(block Block, validateNum int) bool {
 // Adds all values in the given transaction's PutSet into the keyValueStore.
 // Sets the given transaction's IsCommited field to true and its CommitID to the 
 // current value of nextCommitID, returns this value and increments nextCommitID
-func commit(req CommitRequest) (commitId int) {
-	tx := transactions[req.TxID]
+func commit(txid int) (commitId int) {
+	tx := transactions[txid]
 	putSet := tx.PutSet
 	for k := range putSet {
 		keyValueStore[k] = putSet[k]
@@ -406,7 +411,7 @@ func commit(req CommitRequest) (commitId int) {
 	nextCommitID += 10
 	tx.IsCommitted = true
 	tx.CommitID = commitId
-	transactions[req.TxID] = tx
+	transactions[txid] = tx
 	return
 }
 
