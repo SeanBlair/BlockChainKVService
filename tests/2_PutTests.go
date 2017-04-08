@@ -17,7 +17,7 @@ import (
 )
 func main() {
 	var nodes []string
-	nodes = []string{"localhost:2224", "localhost:2226"}
+	nodes = []string{"localhost:2222"}
 
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)

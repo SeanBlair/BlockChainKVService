@@ -1,9 +1,8 @@
 /*
-Tests basic communication between client and kvnode using kvservice.
-Creates 2 non-overlapping transactions and commits them.
+For concurrent client testing scenarios
 
 Usage:
-go run 1_TwoNonOverlappingTransactions.go
+go run Bclient.go
 */
 
 package main
@@ -32,8 +31,8 @@ func main() {
 	success, v, err := t1.Get("A")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// success, txID, err := t1.Commit(0)
-	// fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
+	success, txID, err := t1.Commit(1)
+	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	// t2, err := c.NewTX()
 	// fmt.Printf("NewTX returned: %v, %v\n", t2, err)

@@ -19,7 +19,6 @@ func main() {
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
 
-	// 
 	fmt.Println("\nTest1\n")
 	t1, err := c.NewTX()
 	fmt.Printf("NewTX returned: %v, %v\n", t1, err)

@@ -105,7 +105,7 @@ type Transaction struct {
 	// For storing this transaction's Puts before it commits.
 	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
-	KeySet []Key
+	KeySet map[Key]bool
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
@@ -123,32 +123,14 @@ type AddBlockRequest struct {
 // KVClient Request and Response structs
 type NewTransactionResp struct {
 	TxID int
-}
-
-type PutRequest struct {
-	TxID int
-	K Key
-	Val Value
-}
-
-type PutResponse struct {
-	Success bool
-	Err string
-}
-
-type GetRequest struct {
-	TxID int
-	K Key
-}
-
-type GetResponse struct {
-	Success bool
-	Val Value
-	Err string	
+	// The keyValueStore state on call to NewTX
+	KeyValueStore map[Key]Value
 }
 
 type CommitRequest struct {
-	TxID int
+	Transaction Transaction
+	// The original values in keyValueStore of keys that the transaction touched
+	RequiredKeyValues map[Key]Value
 	ValidateNum int
 }
 
@@ -274,6 +256,10 @@ func printState () {
 		for k := range tx.PutSet {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
 		}
+		fmt.Println("    KeySet:")
+		for k := range tx.KeySet {
+			fmt.Println("      Key:", k)
+		}
 	}
 	fmt.Println("-blockChain:")
 	printBlockChain()
@@ -329,59 +315,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID++
-	transactions[txID] = Transaction{txID, make(map[Key]Value), []Key{}, false, false, 0}
-	*resp = NewTransactionResp{txID}
-	printState()
-	return nil
-}
-
-// Returns false if the given transaction is aborted, otherwise adds a Put record 
-// to the given transaction's PutSet, 
-func (p *KVServer) Put(req PutRequest, resp *PutResponse) error {
-	fmt.Println("Received a call to Put(", req, ")")
-	if transactions[req.TxID].IsAborted {
-		*resp = PutResponse{false, abortedMessage}
-	} else {
-		transactions[req.TxID].PutSet[req.K] = req.Val 
-		appendKeyIfMissing(req.TxID, req.K)
-		*resp = PutResponse{true, ""}	
-	}
-	printState()
-	return nil
-}
-
-// Returns the Value corresponding to the given Key and to the given transaction's
-// previous Put calls. Returns "" if key does not exist, and false
-// if transaction is aborted.
-func (p *KVServer) Get(req GetRequest, resp *GetResponse) error {
-	fmt.Println("Received a call to Get(", req, ")")
-	if transactions[req.TxID].IsAborted {
-		*resp = GetResponse{false, "", abortedMessage}
-	} else {
-		appendKeyIfMissing(req.TxID, req.K)
-		val := getValue(req)
-		*resp = GetResponse{true, val, ""}
-	}
-	return nil
-}
-
-// Returns the given Key's value by first checking in the given transaction's PutSet,
-// otherwise retrieves it from the keyValueStore. Returns "" if key does not exist
-func getValue(req GetRequest) (val Value) {
-	val, ok := transactions[req.TxID].PutSet[req.K]
-	if !ok {
-		val = keyValueStore[req.K]
-	}
-	return
-}
-
-// Sets the IsAborted field, of transaction with id == txid, to true
-func (p *KVServer) Abort(txid int, resp *bool) error {
-	fmt.Println("Received a call to Abort(", txid, ")")
-	tx := transactions[txid]
-	tx.IsAborted = true
-	transactions[txid] = tx
-	*resp = true
+	*resp = NewTransactionResp{txID, keyValueStore}
 	printState()
 	return nil
 }
@@ -390,24 +324,48 @@ func (p *KVServer) Abort(txid int, resp *bool) error {
 // and returns its CommitID value, 
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
-	if transactions[req.TxID].IsAborted {
+	tx := req.Transaction
+	transactions[tx.ID] = tx
+	isGenerateNoOps = false
+	for isWorkingOnNoOp {
+		fmt.Println("Commit Waiting for NoOp...")
+	}
+	if !isCommitPossible(req.RequiredKeyValues) {
+		t := transactions[tx.ID]
+		t.IsAborted = true
+		transactions[tx.ID] = t
 		*resp = CommitResponse{false, 0, abortedMessage}
+		isGenerateNoOps = true
 	} else {
-		isGenerateNoOps = false
-		for isWorkingOnNoOp {
-			fmt.Println("Commit Waiting for NoOp")
-		}
-		blockHash := generateCommitBlock(req.TxID)
+		txn := transactions[tx.ID]
+		txn.IsCommitted = true
+		transactions[tx.ID] = txn
+		// TODO set transaction id?? (Parent Depth + 1??)
+		blockHash := generateCommitBlock(tx.ID)
 		// TODO check that it is on longest block...
 		// else: regenerate on correct branch??
 		// TODO give correct commitID... 
-		commitId := commit(req)
+		commitId := commit(tx.ID)
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
 	}
 	printState()
 	return nil
+}
+
+// Returns true if keyValueStore has the same values for the keys of requiredKeyValues
+// This means the keyValueStore has the same values it had when the transaction started.
+func isCommitPossible(requiredKeyValues map[Key]Value) bool {
+	for k := range requiredKeyValues {
+		val, ok := keyValueStore[k]
+		if ok && val != requiredKeyValues[k] {
+			return false
+		} else if !ok && val != "" {
+			return false	
+		}
+	}
+	return true
 }
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
@@ -443,8 +401,8 @@ func isBlockValidated(block Block, validateNum int) bool {
 // Adds all values in the given transaction's PutSet into the keyValueStore.
 // Sets the given transaction's IsCommited field to true and its CommitID to the 
 // current value of nextCommitID, returns this value and increments nextCommitID
-func commit(req CommitRequest) (commitId int) {
-	tx := transactions[req.TxID]
+func commit(txid int) (commitId int) {
+	tx := transactions[txid]
 	putSet := tx.PutSet
 	for k := range putSet {
 		keyValueStore[k] = putSet[k]
@@ -453,7 +411,7 @@ func commit(req CommitRequest) (commitId int) {
 	nextCommitID += 10
 	tx.IsCommitted = true
 	tx.CommitID = commitId
-	transactions[req.TxID] = tx
+	transactions[txid] = tx
 	return
 }
 
@@ -566,21 +524,6 @@ func addToBlockChain(block Block) {
 	*/
 	blockChain[block.Hash] = block
 	appendLeafChildHash(block.Hash)		
-}
-
-// Looks up the transaction, if it already has key - return. Else, append it to
-// the transaction's KeySet and replace the transaction in the map with it. 
-// (Must replace transaction because it cannot be directly appended) ...Stupid pointer issues
-func appendKeyIfMissing(txID int, k Key) {
-	txn := transactions[txID]
-	for _, key := range txn.KeySet {
-		if key == k {
-			return
-		}
-	}
-	txn.KeySet = append(txn.KeySet, k)
-	transactions[txID] = txn
-	return
 }
 
 // Infinitely listens and serves KVNode RPC calls

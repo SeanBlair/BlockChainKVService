@@ -2,7 +2,7 @@
 Tests aborting transactions at different times, successive calls do not succeed.
 
 Usage:
-go run 4_AbortTests.go
+go run 5_TestSequential.go
 */
 
 package main
