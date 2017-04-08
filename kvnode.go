@@ -379,6 +379,7 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	transactions[tx.ID] = tx
 	isGenerateNoOps = false
 	for isWorkingOnNoOp {
+		// TODO check if taking this out makes it hang. Similar situation in AddBlock, fixe by sleeping for 1 Millisecond
 		fmt.Println("Commit Waiting for NoOp...")
 	}
 	if !isCommitPossible(req.RequiredKeyValues) {
@@ -567,8 +568,10 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 		// this is to stop generating noOps when we have a new Block in the block chain...
 		go func() {
 			isGenerateNoOps = false
+			fmt.Println("AddBlock is Waiting for NoOp...")
 			for isWorkingOnNoOp {
-				fmt.Println("AddBlock is Waiting for NoOp...")
+				// This stopped it from hanging... !!!
+				time.Sleep(time.Millisecond)
 			}
 			addToBlockChain(b)
 			isGenerateNoOps = true
