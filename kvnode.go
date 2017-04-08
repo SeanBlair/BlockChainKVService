@@ -43,6 +43,9 @@ import (
 var (
 	genesisHash string
 	leafBlockHash string // TODO: Reconsider naming
+
+	leafBlocks map[string]Block
+
 	numLeadingZeroes int 
 	nodeIPs []string
 	myNodeID int 
@@ -88,6 +91,7 @@ type Block struct {
 	Hash string
 	ChildrenHashes []string
 	IsOnLongestBranch bool
+	Depth int
 	HashBlock HashBlock
 }
 
@@ -160,9 +164,14 @@ func main() {
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 	blockChain = make(map[string]Block)
-	genesisBlock := Block{Hash: genesisHash}
+	leafBlocks = make(map[string]Block)
+
+	// Add genesis block to blockChain map
+	genesisBlock := Block{Hash: genesisHash, IsOnLongestBranch: true, Depth: 0}
 	blockChain[genesisHash] = genesisBlock
-	leafBlockHash = genesisHash
+	// Add genesis block to leafBlocks map
+	leafBlocks[genesisHash] = genesisBlock
+
 	isGenerateNoOps = true
 	isWorkingOnNoOp = false
 	printState()
@@ -191,7 +200,14 @@ func generateNoOpBlocks() {
 // Returns either when isGenerateNoOps = false or successfully generates 1 NoOp
 func generateNoOpBlock() {
 	fmt.Println("Generating a NoOp Block...")
-	noOpBlock := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0} }
+	// TODO: pick correct block in leafBlocks to start working on
+	var nextParentBlock Block
+	for leafHash := range leafBlocks {
+		nextParentBlock = leafBlocks[leafHash]
+		break
+	}
+	noOpBlock := Block { HashBlock: HashBlock{ParentHash: nextParentBlock.Hash, Txn: Transaction{}, NodeID: myNodeID, Nonce: 0}}
+	noOpBlock.Depth = nextParentBlock.Depth + 1
 	for isGenerateNoOps {
 		success, _ := generateBlock(&noOpBlock)
 		if success {
@@ -220,7 +236,6 @@ func generateBlock(block *Block) (bool, string) {
 		b.IsOnLongestBranch = true
 		addToBlockChain(b)
 		broadcastBlock(b)
-		// TODO: broadcast Block
 		return true, hashString
 	} else {
 		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
@@ -273,19 +288,20 @@ func printBlockChain() {
 	fmt.Printf("GenesisBlockHash: %x\n", genesisBlock.Hash)
 	fmt.Printf("GenesisBlockChildren: %x\n", genesisBlock.ChildrenHashes)
 	for _, childHash := range genesisBlock.ChildrenHashes {
-		printBlock(childHash, 1)
+		printBlock(childHash)
 	}
 }
 
 // Prints one block in the blockChain to console
-func printBlock(blockHash string, depth int) {
+func printBlock(blockHash string) {
+	block := blockChain[blockHash]
 	indent := ""
-	for i := 0; i < depth; i++ {
+	for i := 0; i < block.Depth; i++ {
 		indent += " "
 	}
-	block := blockChain[blockHash]
 	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.Txn.ID)
 	fmt.Printf("%sBlock.Hash :%x\n", indent, block.Hash)
+	fmt.Printf("%sBlock.Depth :%v\n", indent, block.Depth)
 	fmt.Printf("%sBlock.ChildrenHashes :%x\n", indent, block.ChildrenHashes)
 	fmt.Printf("%sBlock.IsOnLongestBranch :%v\n", indent, block.IsOnLongestBranch)
 	hashBlock := block.HashBlock
@@ -295,7 +311,7 @@ func printBlock(blockHash string, depth int) {
 	fmt.Printf("%sBlock.HashBlock.Nonce :%x\n\n", indent, hashBlock.Nonce)
 
 	for _, childHash := range block.ChildrenHashes {
-		printBlock(childHash, depth + 1)
+		printBlock(childHash)
 	}
 }
 
@@ -514,16 +530,23 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 }
 
 func addToBlockChain(block Block) {
-// Alternative Method of adding to Blockchain
-	/*	
-		blockChain[block.Hash] = block
-		pBlock := blockChain[block.HashBlock.ParentHash]
-		leafBlockHash = block.Hash
-		pBlock.ChildrenHashes = append(pBlock.ChildrenHashes, block.Hash) 
-		blockChain[block.HashBlock.ParentHash] = pBlock
-	*/
 	blockChain[block.Hash] = block
-	appendLeafChildHash(block.Hash)		
+	setParentsNewChild(block)
+	addToLeafBlocks(block)
+}
+
+// Adds block to leafBlocks and removes its parent
+func addToLeafBlocks(block Block) {
+	leafBlocks[block.Hash] = block
+	delete(leafBlocks, block.HashBlock.ParentHash)
+}
+
+func setParentsNewChild(block Block) {
+	parentBlock := blockChain[block.HashBlock.ParentHash]
+	children := parentBlock.ChildrenHashes
+	children = append(children, block.Hash)
+	parentBlock.ChildrenHashes = children
+	blockChain[parentBlock.Hash] = parentBlock
 }
 
 // Infinitely listens and serves KVNode RPC calls
@@ -537,7 +560,7 @@ func listenNodeRPCs() {
 	for {
 		conn, err := l.Accept()
 		checkError("Error in listenNodeRPCs(), l.Accept()", err, true)
-		kvNode.ServeConn(conn)
+		go kvNode.ServeConn(conn)
 	}
 }
 
