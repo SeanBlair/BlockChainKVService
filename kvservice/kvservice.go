@@ -198,24 +198,46 @@ func getWeightedSum(ipPort string) (sum int) {
 func (c *myconn) NewTX() (tx, error) {
 	fmt.Println("kvservice received a call to NewTX()")
 	newTx := new(mytx)
-	newTx.ID = getNewTransactionID()
+	newTx.ID = getNewTransactionIDFromAll()
 	return newTx, nil
 }
 
+func getNewTransactionIDFromAll() (txid int) {
+	newTxResponses := make(map[string]NewTransactionResp)
+	count := 0
+	for _, nodeIpPort := range sortedKvnodeIpPorts {
+		go func(node string) {
+			newTxResponses[node] = getNewTransactionID(node)
+			count++
+		}(nodeIpPort)
+	}
+	// waits for all to respond
+	// TODO support dead kvnodes...
+	for (count < len(sortedKvnodeIpPorts)) {} 
+	if (count == len(sortedKvnodeIpPorts)) { 
+		fmt.Println("All responded and newTxResponses contains", newTxResponses)
+	} 
+	// TODO check and resolve different answers
+	for nodeIpP := range newTxResponses {
+		resp := newTxResponses[nodeIpP]
+		fmt.Println("Returning newTx response:", resp, " from node:", nodeIpP)
+		currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
+		originalKeyValueStore = resp.KeyValueStore
+		txid = resp.TxID
+		return
+	}
+	return
+}
+
 // Calls KVServer.NewTransaction RPC, returns a unique transaction ID
-func getNewTransactionID() int {
-	var resp NewTransactionResp
-	client, err := rpc.Dial("tcp", sortedKvnodeIpPorts[0])
+func getNewTransactionID(ipPort string) (resp NewTransactionResp) {
+	client, err := rpc.Dial("tcp", ipPort)
 	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.NewTransaction", true, &resp)
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in getNewTransactionID(), client.Close():", err, true)
-	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
-	originalKeyValueStore = resp.KeyValueStore
-	printState()
-
-	return resp.TxID
+	return
 }
 
 // 
@@ -282,6 +304,7 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	return
 }
 
+// 
 func commitAll(validateNum int) (success bool, commitID int, err error) {
 	commitResponses := make(map[string]CommitResponse)
 	count := 0

@@ -118,6 +118,7 @@ type Transaction struct {
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
+	CommitHash string
 }
 
 // For registering RPC's
@@ -396,20 +397,15 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		*resp = CommitResponse{false, 0, abortedMessage}
 		isGenerateNoOps = true
 	} else {
-		txn := transactions[tx.ID]
-		txn.IsCommitted = true
-		transactions[tx.ID] = txn
 		blockHash := generateCommitBlock(tx.ID)
-		// TODO check that it is on longest block...
+		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
 		// Idea: check if Block.IsOnLongestBranch == true. Maybe don't set it until sure???
-		// TODO give correct commitID... (Block Depth?)
-		commitId := commit(tx.ID)
+		commitId := transactions[tx.ID].CommitID
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
 	}
-	// printState()
 	return nil
 }
 
@@ -458,29 +454,13 @@ func isBlockValidated(block Block, validateNum int) bool {
 	}
 }
 
-// Adds all values in the given transaction's PutSet into the keyValueStore.
-// Sets the given transaction's IsCommited field to true and its CommitID to the 
-// current value of nextCommitID, returns this value and increments nextCommitID
-func commit(txid int) (commitId int) {
-	tx := transactions[txid]
-	putSet := tx.PutSet
-	for k := range putSet {
-		keyValueStore[k] = putSet[k]
-	}
-	commitId = nextCommitID
-	nextCommitID += 10
-	tx.IsCommitted = true
-	tx.CommitID = commitId
-	transactions[txid] = tx
-	return
-}
-
 // Adds a Commit Block with transaction txid to the blockChain, 
 // returns its hash
 func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
 	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
 	for {
+		// AddBlock added the block we are trying to add into the blockChain.
 		isInChain, hash := isBlockInChain(txid)
 		if isInChain {
 			return hash 
@@ -501,23 +481,16 @@ func generateCommitBlock(txid int) string {
 	}
 }
 
-// TODO use a smarter way to identify blocks already in chain
-// this iterates through the whole block chain, consider storing the 
-// txids and hashes of committed transactions in their own map.
+//
 func isBlockInChain(txid int) (bool, string) {
 	mutex.Lock()
-	bChain := blockChain
+	tx := transactions[txid]
 	mutex.Unlock() 
-	for hash := range bChain {
-		mutex.Lock()
-		bl := bChain[hash]
-		mutex.Unlock()
-		tid := bl.HashBlock.Txn.ID
-		if tid == txid {
-			return true, hash
-		}
+	if tx.IsCommitted {
+		return true, tx.CommitHash
+	} else {
+		return false, ""
 	}
-	return false, ""
 }
 
 // Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
@@ -629,12 +602,25 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	return nil
 }
 
-// 
+// Should set all the state that represents a commited transaction
+// called by both Commit or AddBlock
 func addToBlockChain(block Block) {
 	fmt.Println("In addToBlockChain()")
 	blockChain[block.Hash] = block
 	setParentsNewChild(block)
 	updateLeafBlocks(block)
+	tx := block.HashBlock.Txn
+	// a Commit transaction
+	if tx.ID > 0 {
+		putSet := tx.PutSet
+		for k := range putSet {
+			keyValueStore[k] = putSet[k]
+		}
+		tx.IsCommitted = true
+		tx.CommitHash = block.Hash
+		tx.CommitID = block.Depth
+		transactions[tx.ID] = tx
+	}
 	// TODO if a commit block, ensure that it is on the longest chain. ??
 }
 
