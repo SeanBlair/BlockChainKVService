@@ -415,7 +415,17 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		*resp = CommitResponse{false, 0, abortedMessage}
 		isGenerateNoOps = true
 	} else {
-		blockHash := generateCommitBlock(tx.ID)
+		blockHash := generateCommitBlock(tx.ID, req.RequiredKeyValues)
+		if blockHash == "" {
+			// a conflicting transaction just commited
+			mutex.Lock()
+			t := transactions[tx.ID]
+			t.IsAborted = true
+			transactions[tx.ID] = t
+			mutex.Unlock()
+			*resp = CommitResponse{false, 0, abortedMessage}
+			isGenerateNoOps = true
+		}
 		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
 		// Idea: check if Block.IsOnLongestBranch == true. Maybe don't set it until sure???
@@ -484,7 +494,7 @@ func isBlockValidated(block Block, validateNum int) bool {
 
 // Adds a Commit Block with transaction txid to the blockChain, 
 // or allows AddBlock to add it, returns its hash
-func generateCommitBlock(txid int) string {
+func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 	fmt.Println("Generating a Commit Block...")
 	mutex.Lock()
 	tx := transactions[txid]
@@ -498,6 +508,9 @@ func generateCommitBlock(txid int) string {
 			if isInChain {
 				isWorkingOnCommit = false
 				return hash
+			} else if !isCommitPossible(requiredKeyValues) {
+				isWorkingOnCommit = false
+				return ""
 			} else {
 				block = setCorrectParentHashAndDepth(block)
 				for isGenerateCommits {
