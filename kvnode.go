@@ -301,11 +301,16 @@ func printState () {
 	fmt.Println("\nKVNODE STATE:")
 	fmt.Println("-keyValueStore:")
 	for k := range keyValueStore {
-		fmt.Println("    Key:", k, "Value:", keyValueStore[k])
+		mutex.Lock()
+		val := keyValueStore[k]
+		mutex.Unlock()
+		fmt.Println("    Key:", k, "Value:", val)
 	}
 	fmt.Println("-transactions:")
 	for txId := range transactions {
+		mutex.Lock()
 		tx := transactions[txId]
+		mutex.Unlock()
 		fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
 		fmt.Println("    PutSet:")
 		for k := range tx.PutSet {
@@ -378,7 +383,10 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID++
-	*resp = NewTransactionResp{txID, keyValueStore}
+	mutex.Lock()
+	kvStore := keyValueStore
+	mutex.Unlock()
+	*resp = NewTransactionResp{txID, kvStore}
 	printState()
 	return nil
 }
@@ -388,7 +396,9 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
 	tx := req.Transaction
+	mutex.Lock()
 	transactions[tx.ID] = tx
+	mutex.Unlock()
 	isGenerateNoOps = false
 	fmt.Println("Commit Waiting for NoOp...")
 	for isWorkingOnNoOp {
@@ -397,9 +407,11 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	}
 	fmt.Println("Commit done waiting for NoOp.")
 	if !isCommitPossible(req.RequiredKeyValues) {
+		mutex.Lock()
 		t := transactions[tx.ID]
 		t.IsAborted = true
 		transactions[tx.ID] = t
+		mutex.Unlock()
 		*resp = CommitResponse{false, 0, abortedMessage}
 		isGenerateNoOps = true
 	} else {
@@ -407,7 +419,9 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
 		// Idea: check if Block.IsOnLongestBranch == true. Maybe don't set it until sure???
+		mutex.Lock()
 		commitId := transactions[tx.ID].CommitID
+		mutex.Unlock()
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
@@ -419,7 +433,9 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 // This means the keyValueStore has the same values it had when the transaction started.
 func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 	for k := range requiredKeyValues {
+		mutex.Lock()
 		val, ok := keyValueStore[k]
+		mutex.Unlock()
 		if ok && val != requiredKeyValues[k] {
 			return false
 		} else if !ok && val != "" {
@@ -470,7 +486,10 @@ func isBlockValidated(block Block, validateNum int) bool {
 // or allows AddBlock to add it, returns its hash
 func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
-	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
+	mutex.Lock()
+	tx := transactions[txid]
+	mutex.Unlock()
+	block := Block { HashBlock: HashBlock{Txn: tx, NodeID: myNodeID, Nonce: 0} }	
 	for {
 		if isGenerateCommits {
 			isWorkingOnCommit = true
@@ -631,12 +650,16 @@ func addToBlockChain(block Block) {
 	if tx.ID > 0 {
 		putSet := tx.PutSet
 		for k := range putSet {
+			mutex.Lock()
 			keyValueStore[k] = putSet[k]
+			mutex.Unlock()
 		}
 		tx.IsCommitted = true
 		tx.CommitHash = block.Hash
 		tx.CommitID = block.Depth
+		mutex.Lock()
 		transactions[tx.ID] = tx
+		mutex.Unlock()
 	}
 	// TODO if a commit block, ensure that it is on the longest chain. ??
 }
