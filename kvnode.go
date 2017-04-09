@@ -38,6 +38,7 @@ import (
 	"strings"
 	"math"
 	"time"
+	"sync"
 )
 
 var (
@@ -79,6 +80,7 @@ var (
 	// For debugging...
 	// done chan int
 
+	mutex      *sync.Mutex
 	abortedMessage string = "This transaction is aborted!!"
 )
 
@@ -179,6 +181,7 @@ func main() {
 	isWorkingOnNoOp = false
 	isGenerateCommits = true
 	isWorkingOnCommit = false
+	mutex = &sync.Mutex{}
 	printState()
 	go listenNodeRPCs()
 	go listenClientRPCs()
@@ -251,9 +254,12 @@ func setCorrectParentHashAndDepth(block Block) Block {
 func getCommitLeafBlocks() (commitBlocks map[string]Block) {
 	fmt.Println("in getCommitLeafBlocks()")
 	commitBlocks = make(map[string]Block)
-	for leafBlockHash := range leafBlocks {
-		if leafBlocks[leafBlockHash].HashBlock.Txn.ID != 0 {
-			commitBlocks[leafBlockHash] = leafBlocks[leafBlockHash]
+	mutex.Lock()
+	leafBlocksCopy := leafBlocks
+	mutex.Unlock()
+	for leafBlockHash := range leafBlocksCopy {
+		if leafBlocksCopy[leafBlockHash].HashBlock.Txn.ID != 0 {
+			commitBlocks[leafBlockHash] = leafBlocksCopy[leafBlockHash]
 		}
 	}
 	return
@@ -314,7 +320,9 @@ func printState () {
 
 // Prints the blockChain to console
 func printBlockChain() {
+	mutex.Lock()
 	genesisBlock := blockChain[genesisHash]
+	mutex.Unlock()
 	fmt.Printf("GenesisBlockHash: %x\n", genesisBlock.Hash)
 	fmt.Printf("GenesisBlockChildren: %x\n\n", genesisBlock.ChildrenHashes)
 	for _, childHash := range genesisBlock.ChildrenHashes {
@@ -324,7 +332,9 @@ func printBlockChain() {
 
 // Prints one block in the blockChain to console
 func printBlock(blockHash string) {
+	mutex.Lock()
 	block := blockChain[blockHash]
+	mutex.Unlock()
 	indent := ""
 	for i := 0; i < block.Depth; i++ {
 		indent += " "
@@ -491,10 +501,19 @@ func generateCommitBlock(txid int) string {
 	}
 }
 
+// TODO use a smarter way to identify blocks already in chain
+// this iterates through the whole block chain, consider storing the 
+// txids and hashes of committed transactions in their own map.
 func isBlockInChain(txid int) (bool, string) {
-	bChain := blockChain 
+	mutex.Lock()
+	bChain := blockChain
+	mutex.Unlock() 
 	for hash := range bChain {
-		if bChain[hash].HashBlock.Txn.ID == txid {
+		mutex.Lock()
+		bl := bChain[hash]
+		mutex.Unlock()
+		tid := bl.HashBlock.Txn.ID
+		if tid == txid {
 			return true, hash
 		}
 	}
@@ -580,9 +599,7 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	if(*resp == true) {
 		fmt.Println("Received HashBlock: VERIFIED")
 		// to allow return to caller
-		go func() {
-
-			
+		go func() {	
 			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
 			// stop generating Commits when we have a new Block in the chain

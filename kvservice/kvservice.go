@@ -211,7 +211,6 @@ func getNewTransactionID() int {
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in getNewTransactionID(), client.Close():", err, true)
-
 	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
 	originalKeyValueStore = resp.KeyValueStore
 	printState()
@@ -273,7 +272,7 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	if currentTransaction.IsAborted {
 		return false, 0, errors.New(abortedMessage)
 	} else {
-		success, commitID, err = commit(validateNum)
+		success, commitID, err = commitAll(validateNum)
 		if success {
 			currentTransaction.IsCommitted = true
 			currentTransaction.CommitID = commitID
@@ -283,19 +282,42 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	return
 }
 
+func commitAll(validateNum int) (success bool, commitID int, err error) {
+	commitResponses := make(map[string]CommitResponse)
+	count := 0
+	for _, nodeIpPort := range sortedKvnodeIpPorts {
+		go func(node string) {
+			commitResponses[node] = commit(node, validateNum)
+			count++
+		}(nodeIpPort)
+	}
+	// waits for all to respond
+	// TODO support dead kvnodes...
+	for(count < len(sortedKvnodeIpPorts)) {} 
+	if(count == len(sortedKvnodeIpPorts)) { 
+		fmt.Println("All responded and commitResponses contains", commitResponses)
+	} 
+	// TODO check and resolve different answers
+	for nodeIpP := range commitResponses {
+		resp := commitResponses[nodeIpP]
+		fmt.Println("Returning commit response:", resp, " from node:", nodeIpP)
+		return resp.Success, resp.CommitID, errors.New(resp.Err)
+	}
+	return
+}
+
 // Calls KVServer.Commit RPC to start the process of committing transaction txid
-func commit(validateNum int) (success bool, commitID int, err error) {
+func commit(nodeIpPort string, validateNum int) (resp CommitResponse) {
 	requiredKeyValues := getRequiredKeyValues()
 	fmt.Println("requiredKeyValues:", requiredKeyValues)
 	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
-	var resp CommitResponse
-	client, err := rpc.Dial("tcp", sortedKvnodeIpPorts[0])
+	client, err := rpc.Dial("tcp", nodeIpPort)
 	checkError("Error in commit(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.Commit", req, &resp)
 	checkError("Error in commit(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in commit(), client.Close():", err, true)
-	return resp.Success, resp.CommitID, errors.New(resp.Err)
+	return 
 }
 
 // Creates map of the original values that keys in KeySet had in originalKeyValueStore
