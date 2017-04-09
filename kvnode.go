@@ -42,7 +42,6 @@ import (
 
 var (
 	genesisHash string
-	leafBlockHash string // TODO: Reconsider naming
 
 	leafBlocks map[string]Block
 
@@ -204,8 +203,6 @@ func generateNoOpBlock() {
 		fmt.Println("We have a fork!!!!!!!!!!!!!!")
 	}
 	noOpBlock := Block { HashBlock: HashBlock{Txn: Transaction{}, NodeID: myNodeID, Nonce: 0}}
-
-	// TODO pick correct block in leafBlocks to start working on
 	noOpBlock = setCorrectParentHashAndDepth(noOpBlock)
 	for isGenerateNoOps {
 		success, _ := generateBlock(&noOpBlock)
@@ -267,9 +264,9 @@ func generateBlock(block *Block) (bool, string) {
 		hashString := string(hash)
 		b.Hash = hashString
 		// TODO make sure this is true!!!
-		// have to implement fork support and longest branch identification...
 		b.IsOnLongestBranch = true
 		addToBlockChain(b)
+		printState()
 		broadcastBlock(b)
 		return true, hashString
 	} else {
@@ -277,18 +274,6 @@ func generateBlock(block *Block) (bool, string) {
 		*block = b
 		return false, ""
 	}
-}
-
-
-// set previous leaf Block's new child	
-func appendLeafChildHash(hash string) {
-	leafBlock := blockChain[leafBlockHash]
-	leafBlockChildren := leafBlock.ChildrenHashes
-	leafBlockChildren = append(leafBlockChildren, hash)
-	leafBlock.ChildrenHashes = leafBlockChildren
-	blockChain[leafBlockHash] = leafBlock
-
-	leafBlockHash = hash
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
@@ -378,10 +363,12 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	tx := req.Transaction
 	transactions[tx.ID] = tx
 	isGenerateNoOps = false
+	fmt.Println("Commit Waiting for NoOp...")
 	for isWorkingOnNoOp {
-		// TODO check if taking this out makes it hang. Similar situation in AddBlock, fixe by sleeping for 1 Millisecond
-		fmt.Println("Commit Waiting for NoOp...")
+		// This stopped it from hanging... !
+		time.Sleep(time.Millisecond)
 	}
+	fmt.Println("Commit done waiting for NoOp.")
 	if !isCommitPossible(req.RequiredKeyValues) {
 		t := transactions[tx.ID]
 		t.IsAborted = true
@@ -392,12 +379,11 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		txn := transactions[tx.ID]
 		txn.IsCommitted = true
 		transactions[tx.ID] = txn
-		// TODO set transaction id?? (Parent Depth + 1??)
 		blockHash := generateCommitBlock(tx.ID)
 		// TODO check that it is on longest block...
 		// else: regenerate on correct branch??
 		// Idea: check if Block.IsOnLongestBranch == true. Maybe don't set it until sure???
-		// TODO give correct commitID... 
+		// TODO give correct commitID... (Block Depth?)
 		commitId := commit(tx.ID)
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
@@ -435,6 +421,7 @@ func validateCommit(req CommitRequest, blockHash string) {
 // Recursively traverses the longest branch of the blockChain tree starting at the given block,
 // if there are at least validateNum descendents returns true, else returns false  
 func isBlockValidated(block Block, validateNum int) bool {
+	// TODO is this bool necessary?? Is this the only place using it??
 	if !block.IsOnLongestBranch {
 		return false
 	} else {
@@ -472,16 +459,15 @@ func commit(txid int) (commitId int) {
 // returns its hash
 func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
-	
-	// TODO  set correct parent hash
-	block := Block { HashBlock: HashBlock{ParentHash: leafBlockHash, Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
-	// block = setCorrectParentHashAndDepth(block)
+	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
+	block = setCorrectParentHashAndDepth(block)
 
-	// TODO allow interruption from AddBlock
+	// TODO allow interruption from AddBlock??
+	// if so, have to retry, if new block is not the same one trying to commit
 	for {
 		success, blockHash := generateBlock(&block)
 		if success {
-			// TODO verify that it is on longes branch, and set IsOnLongestBranch = true
+			// TODO verify that it is on longest branch, and set IsOnLongestBranch = true ??
 			return blockHash
 		}
 	}
@@ -564,21 +550,20 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	*resp = isLeadingNumZeroes(hash)
 	if(*resp == true) {
 		fmt.Println("Received HashBlock: VERIFIED")
-		// TODO: verify this does not cause deadlocks, due to many threads (Each call to AddBlock is served on a new thread)
-		// this is to stop generating noOps when we have a new Block in the block chain...
+		// to allow return to caller
 		go func() {
+			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
 			fmt.Println("AddBlock is Waiting for NoOp...")
 			for isWorkingOnNoOp {
 				// This stopped it from hanging... !!!
 				time.Sleep(time.Millisecond)
 			}
+			fmt.Println("AddBlock is Done Waiting for NoOp")
 			addToBlockChain(b)
 			isGenerateNoOps = true
-
+			printState()
 			} ()
-		// TODO: verify that the previous does not cause deadlocks
-
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
 	}
@@ -590,7 +575,7 @@ func addToBlockChain(block Block) {
 	blockChain[block.Hash] = block
 	setParentsNewChild(block)
 	updateLeafBlocks(block)
-	// TODO if a commit block, ensure that it is on the longest chain.
+	// TODO if a commit block, ensure that it is on the longest chain. ??
 }
 
 // Adds block to leafBlocks and remove blocks with lesser depth than block from leafBlocks
@@ -598,7 +583,7 @@ func updateLeafBlocks(block Block) {
 	leafBlocks[block.Hash] = block
 	for leafBlockHash := range leafBlocks {
 		if leafBlocks[leafBlockHash].Depth < block.Depth {
-			// TODO if deleting a Commit block, check if saveable and save.
+			// TODO if deleting a Commit block, check if saveable and save. ??
 			// if not saveable, set it's IsAborted field to true, allowing the thread
 			// that is waiting for it to get validated to return false???
 			// if saveable, have to add it to the end of the blockChain...
