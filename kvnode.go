@@ -69,8 +69,12 @@ var (
 
 	// true when not generating Commit Blocks
 	isGenerateNoOps bool
+	// true when not receiving a Block from other kvnode
+	isGenerateCommits bool
 	// true when busy working on NoOp Block
 	isWorkingOnNoOp bool
+	// true when busy working on commit Block
+	isWorkingOnCommit bool
 
 	// For debugging...
 	// done chan int
@@ -173,6 +177,8 @@ func main() {
 
 	isGenerateNoOps = true
 	isWorkingOnNoOp = false
+	isGenerateCommits = true
+	isWorkingOnCommit = false
 	printState()
 	go listenNodeRPCs()
 	go listenClientRPCs()
@@ -460,17 +466,38 @@ func commit(txid int) (commitId int) {
 func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
 	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
-	block = setCorrectParentHashAndDepth(block)
-
-	// TODO allow interruption from AddBlock??
-	// if so, have to retry, if new block is not the same one trying to commit
 	for {
-		success, blockHash := generateBlock(&block)
-		if success {
-			// TODO verify that it is on longest branch, and set IsOnLongestBranch = true ??
-			return blockHash
+		// Check if block has already been added by another node
+		isInChain, hash := isBlockInChain(txid)
+		if isInChain {
+			return hash 
+		} else {
+			block = setCorrectParentHashAndDepth(block)
+			for isGenerateCommits {
+				// does not allow AddBlock to interupt
+				isWorkingOnCommit = true
+				success, blockHash := generateBlock(&block)
+				isWorkingOnCommit = false
+				if success {
+					// Allows AddBlock to add to the block chain
+					return blockHash
+				}
+			}
+			// AddBlock trying to add a block to the block chain
+			// Allow and recumpute correct parent
+			time.Sleep(time.Millisecond * 10)	
 		}
 	}
+}
+
+func isBlockInChain(txid int) (bool, string) {
+	bChain := blockChain 
+	for hash := range bChain {
+		if bChain[hash].HashBlock.Txn.ID == txid {
+			return true, hash
+		}
+	}
+	return false, ""
 }
 
 // Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
@@ -552,6 +579,9 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 		fmt.Println("Received HashBlock: VERIFIED")
 		// to allow return to caller
 		go func() {
+
+			// stop generating Commits when we have a new Block in the chain
+			isGenerateCommits = false
 			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
 			fmt.Println("AddBlock is Waiting for NoOp...")
@@ -560,7 +590,16 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				time.Sleep(time.Millisecond)
 			}
 			fmt.Println("AddBlock is Done Waiting for NoOp")
+			
+			fmt.Println("AddBlock is Waiting for Commit")
+			for isWorkingOnCommit {
+				// This stopped it from hanging... !!!
+				time.Sleep(time.Millisecond)
+			}
+			fmt.Println("AddBlock is Done Waiting for Commit")	
+
 			addToBlockChain(b)
+			isGenerateCommits = true
 			isGenerateNoOps = true
 			printState()
 			} ()
@@ -578,16 +617,14 @@ func addToBlockChain(block Block) {
 	// TODO if a commit block, ensure that it is on the longest chain. ??
 }
 
-// Adds block to leafBlocks and remove blocks with lesser depth than block from leafBlocks
+// Adds block to leafBlocks and remove blocks with lesser depth than block
 func updateLeafBlocks(block Block) {
 	leafBlocks[block.Hash] = block
 	for leafBlockHash := range leafBlocks {
-		if leafBlocks[leafBlockHash].Depth < block.Depth {
-			// TODO if deleting a Commit block, check if saveable and save. ??
-			// if not saveable, set it's IsAborted field to true, allowing the thread
-			// that is waiting for it to get validated to return false???
-			// if saveable, have to add it to the end of the blockChain...
-			delete(leafBlocks, leafBlockHash)		
+		leafBlock := leafBlocks[leafBlockHash]
+		// Remove blocks with lesser depth
+		if leafBlock.Depth < block.Depth {
+			delete(leafBlocks, leafBlockHash)	
 		}
 	}
 }
