@@ -233,7 +233,9 @@ func setCorrectParentHashAndDepth(block Block) Block {
 	if len(leafBlocks) == 1 || len(commitBlocks) == 0 {
 		for leafHash := range leafBlocks {
 			// this randomly picks a block because the order returned from range on maps is undefined
+			mutex.Lock()
 			parentBlock = leafBlocks[leafHash]
+			mutex.Unlock()
 			break
 		}
 	} else {
@@ -252,18 +254,19 @@ func setCorrectParentHashAndDepth(block Block) Block {
 }
 
 // returns leaf blocks that are Commit blocks (not NoOp blocks)
-func getCommitLeafBlocks() (commitBlocks map[string]Block) {
+func getCommitLeafBlocks() map[string]Block {
 	fmt.Println("in getCommitLeafBlocks()")
-	commitBlocks = make(map[string]Block)
+	commitBlocks := make(map[string]Block)
 	mutex.Lock()
 	leafBlocksCopy := leafBlocks
 	mutex.Unlock()
 	for leafBlockHash := range leafBlocksCopy {
 		if leafBlocksCopy[leafBlockHash].HashBlock.Txn.ID != 0 {
-			commitBlocks[leafBlockHash] = leafBlocksCopy[leafBlockHash]
+			commitLeafBlock := leafBlocksCopy[leafBlockHash]
+			commitBlocks[leafBlockHash] = commitLeafBlock
 		}
 	}
-	return
+	return commitBlocks
 }
 
 // Hashes the given Block's HashBlock once, if has sufficient leading zeroes, adds it 
@@ -359,11 +362,14 @@ func printBlock(blockHash string) {
 // Returns the children hashes of the Block that has the given hash as key in the blockChain
 func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse) error {
 	fmt.Println("Received a call to GetChildren with:", req)
-	if req.ParentHash == "" {
-		resp.Children = blockChain[genesisHash].ChildrenHashes
-	} else {
-		resp.Children = blockChain[req.ParentHash].ChildrenHashes
+	hash := req.ParentHash
+	if hash == "" {
+		hash = genesisHash
 	}
+	mutex.Lock()
+	parentBlock := blockChain[hash]
+	mutex.Unlock()
+	resp.Children = parentBlock.ChildrenHashes 
 	return nil
 }
 
@@ -425,8 +431,11 @@ func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
 func validateCommit(req CommitRequest, blockHash string) {
+	mutex.Lock()
+	block := blockChain[blockHash]
+	mutex.Unlock()
 	for {
-		if isBlockValidated(blockChain[blockHash], req.ValidateNum) {
+		if isBlockValidated(block, req.ValidateNum) {
 			return
 		} else {
 			time.Sleep(time.Second)
@@ -445,7 +454,10 @@ func isBlockValidated(block Block, validateNum int) bool {
 			return true
 		} else {
 			for _, child := range block.ChildrenHashes {
-				if isBlockValidated(blockChain[child], validateNum - 1) {
+				mutex.Lock()
+				childBlock := blockChain[child]
+				mutex.Unlock()
+				if isBlockValidated(childBlock, validateNum - 1) {
 					return true
 				}
 			}
@@ -455,33 +467,36 @@ func isBlockValidated(block Block, validateNum int) bool {
 }
 
 // Adds a Commit Block with transaction txid to the blockChain, 
-// returns its hash
+// or allows AddBlock to add it, returns its hash
 func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
 	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
 	for {
-		// AddBlock added the block we are trying to add into the blockChain.
-		isInChain, hash := isBlockInChain(txid)
-		if isInChain {
-			return hash 
-		} else {
-			block = setCorrectParentHashAndDepth(block)
-			for isGenerateCommits {
-				// fmt.Println("trying new commit")
-				// does not allow AddBlock to interupt
-				isWorkingOnCommit = true
-				success, blockHash := generateBlock(&block)
+		if isGenerateCommits {
+			isWorkingOnCommit = true
+			// this commit block was just added by AddBlock()
+			isInChain, hash := isBlockInChain(txid)
+			if isInChain {
 				isWorkingOnCommit = false
-				if success {
-					// Allows AddBlock to add to the block chain
-					return blockHash
+				return hash
+			} else {
+				block = setCorrectParentHashAndDepth(block)
+				for isGenerateCommits {
+					success, blockHash := generateBlock(&block)
+					isWorkingOnCommit = false
+					if success {
+						return blockHash
+					}					
 				}
 			}
 		}
+		// isGenerateCommits was set to false by AddBlock()
+		time.Sleep(time.Millisecond)
 	}
 }
 
-//
+// Returns true and the hash of the Block that corresponds to the 
+// given txid if commited, false, "" otherwise
 func isBlockInChain(txid int) (bool, string) {
 	mutex.Lock()
 	tx := transactions[txid]
@@ -606,7 +621,9 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 // called by both Commit or AddBlock
 func addToBlockChain(block Block) {
 	fmt.Println("In addToBlockChain()")
+	mutex.Lock()
 	blockChain[block.Hash] = block
+	mutex.Unlock()
 	setParentsNewChild(block)
 	updateLeafBlocks(block)
 	tx := block.HashBlock.Txn
@@ -626,23 +643,33 @@ func addToBlockChain(block Block) {
 
 // Adds block to leafBlocks and remove blocks with lesser depth than block
 func updateLeafBlocks(block Block) {
+	mutex.Lock()
 	leafBlocks[block.Hash] = block
+	mutex.Unlock()
 	for leafBlockHash := range leafBlocks {
+		mutex.Lock()
 		leafBlock := leafBlocks[leafBlockHash]
+		mutex.Unlock()
 		// Remove blocks with lesser depth
 		if leafBlock.Depth < block.Depth {
-			delete(leafBlocks, leafBlockHash)	
+			mutex.Lock()
+			delete(leafBlocks, leafBlockHash)
+			mutex.Unlock()	
 		}
 	}
 }
 
 // Adds block.Hash to its parent's ChildrenHashes
 func setParentsNewChild(block Block) {
+	mutex.Lock()
 	parentBlock := blockChain[block.HashBlock.ParentHash]
+	mutex.Unlock()
 	children := parentBlock.ChildrenHashes
 	children = append(children, block.Hash)
 	parentBlock.ChildrenHashes = children
+	mutex.Lock()
 	blockChain[parentBlock.Hash] = parentBlock
+	mutex.Unlock()
 }
 
 // Infinitely listens and serves KVNode RPC calls
