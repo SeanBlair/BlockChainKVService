@@ -190,11 +190,12 @@ func main() {
 func generateNoOpBlocks() {
 	fmt.Println("In generateNoOpBlocks()")
 	for {
-		if isGenerateNoOps {
+		if isGenerateNoOps && !isWorkingOnCommit {
 			isWorkingOnNoOp = true
 			generateNoOpBlock()
-			printState()
 			isWorkingOnNoOp = false
+			printState()
+			time.Sleep(time.Millisecond * 100)
 		} else {
 			time.Sleep(time.Second)
 		}
@@ -221,6 +222,7 @@ func generateNoOpBlock() {
 }
 
 func setCorrectParentHashAndDepth(block Block) Block {
+	fmt.Println("in setCorrectParentHashAndDepth()")
 	commitBlocks := getCommitLeafBlocks()
 	var parentBlock Block
 	// only one block (no fork), or all noOp blocks
@@ -247,6 +249,7 @@ func setCorrectParentHashAndDepth(block Block) Block {
 
 // returns leaf blocks that are Commit blocks (not NoOp blocks)
 func getCommitLeafBlocks() (commitBlocks map[string]Block) {
+	fmt.Println("in getCommitLeafBlocks()")
 	commitBlocks = make(map[string]Block)
 	for leafBlockHash := range leafBlocks {
 		if leafBlocks[leafBlockHash].HashBlock.Txn.ID != 0 {
@@ -274,6 +277,7 @@ func generateBlock(block *Block) (bool, string) {
 		addToBlockChain(b)
 		printState()
 		broadcastBlock(b)
+		fmt.Println("Done generating new block")
 		return true, hashString
 	} else {
 		b.HashBlock.Nonce = b.HashBlock.Nonce + 1
@@ -395,7 +399,7 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
 	}
-	printState()
+	// printState()
 	return nil
 }
 
@@ -467,13 +471,13 @@ func generateCommitBlock(txid int) string {
 	fmt.Println("Generating a Commit Block...")
 	block := Block { HashBlock: HashBlock{Txn: transactions[txid], NodeID: myNodeID, Nonce: 0} }	
 	for {
-		// Check if block has already been added by another node
 		isInChain, hash := isBlockInChain(txid)
 		if isInChain {
 			return hash 
 		} else {
 			block = setCorrectParentHashAndDepth(block)
 			for isGenerateCommits {
+				// fmt.Println("trying new commit")
 				// does not allow AddBlock to interupt
 				isWorkingOnCommit = true
 				success, blockHash := generateBlock(&block)
@@ -483,9 +487,6 @@ func generateCommitBlock(txid int) string {
 					return blockHash
 				}
 			}
-			// AddBlock trying to add a block to the block chain
-			// Allow and recumpute correct parent
-			time.Sleep(time.Millisecond * 10)	
 		}
 	}
 }
@@ -549,6 +550,7 @@ func isLeadingNumZeroes(hash []byte) bool {
 }
 
 func broadcastBlock(block Block) {
+	fmt.Println("In broadcastBlock()")
 	req := AddBlockRequest{block}
 
 	for i, ip := range nodeIPs {
@@ -580,10 +582,11 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 		// to allow return to caller
 		go func() {
 
-			// stop generating Commits when we have a new Block in the chain
-			isGenerateCommits = false
+			
 			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
+			// stop generating Commits when we have a new Block in the chain
+			isGenerateCommits = false
 			fmt.Println("AddBlock is Waiting for NoOp...")
 			for isWorkingOnNoOp {
 				// This stopped it from hanging... !!!
@@ -611,6 +614,7 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 
 // 
 func addToBlockChain(block Block) {
+	fmt.Println("In addToBlockChain()")
 	blockChain[block.Hash] = block
 	setParentsNewChild(block)
 	updateLeafBlocks(block)

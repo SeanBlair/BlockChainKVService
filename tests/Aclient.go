@@ -11,7 +11,7 @@ import "../kvservice"
 
 import (
 	"fmt"
-	// "time"
+	"time"
 )
 func main() {
 	var nodes []string
@@ -32,8 +32,8 @@ func main() {
 	success, v, err := t1.Get("A")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// time.Sleep(time.Second * 10)
-	success, txID, err := t1.Commit(7)
+	time.Sleep(time.Second * 10)
+	success, txID, err := t1.Commit(1)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	// t2, err := c.NewTX()
