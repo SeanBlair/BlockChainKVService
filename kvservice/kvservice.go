@@ -20,11 +20,15 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
+	"strings"
+	"math"
+	"strconv"
 )
 
 
 var (
-	kvnodeIpPorts []string
+	sortedKvnodeIpPorts []string
 	currentTransaction Transaction
 	originalKeyValueStore map[Key]Value
 	abortedMessage string = "This transaction is aborted!!"
@@ -147,10 +151,47 @@ type GetChildrenResponse struct {
 // node ip:port strings.
 func NewConnection(nodes []string) connection {
 	fmt.Println("kvservice received a call to NewConnection() with nodes:", nodes)
-	kvnodeIpPorts = nodes
-	fmt.Println("kvnodeIpPorts:", kvnodeIpPorts)
+	setSortedIpPorts(nodes)
+	fmt.Println("sortedKvnodeIpPorts:", sortedKvnodeIpPorts)
 	c := new(myconn)
 	return c
+}
+
+// sorts the unique ip addresses and sets sortedKvnodesIpPorts
+func setSortedIpPorts(nodes []string) {
+	nodeTotalKey := make(map[int]string)
+	var totalList []int
+	for _, node := range nodes {
+		sum := getWeightedSum(node)
+		totalList = append(totalList, sum)
+		// check if sum already in nodeTotalKey map
+		_, ok := nodeTotalKey[sum]
+		var err error
+		if ok {
+			err = errors.New("NewConnection was called with non-unique ip addresses")
+		}
+		checkError("Error in setSortedIpPorts():", err, true)
+		nodeTotalKey[sum] = node
+	}
+	// they are all unique
+	sort.Ints(totalList)
+	for _, sum := range totalList {
+		sortedKvnodeIpPorts = append(sortedKvnodeIpPorts, nodeTotalKey[sum])
+	}
+}
+
+// returns the weighted sum of the ipv4 address which represents a unique number for each possible Ipv4 address
+func getWeightedSum(ipPort string) (sum int) {
+	ip := strings.Split(ipPort, ":")
+	nums := strings.Split(ip[0], ".")
+	for i, n := range nums {
+		intN, err := strconv.Atoi(n)
+		checkError("Error in getSum(), strconv.Atoi()", err, true)
+		// a.b.c.d ==  a * 256^(4-0) + b * 256^(4-1) + c * 256^(4-2) + d * 256^(4-3)
+		// returns a unique number representing each ip address 
+		sum += int(math.Pow(256, float64(4 - i)) * float64(intN))
+	}
+	return
 }
 
 // Initializes a Transaction
@@ -164,7 +205,7 @@ func (c *myconn) NewTX() (tx, error) {
 // Calls KVServer.NewTransaction RPC, returns a unique transaction ID
 func getNewTransactionID() int {
 	var resp NewTransactionResp
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	client, err := rpc.Dial("tcp", sortedKvnodeIpPorts[0])
 	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.NewTransaction", true, &resp)
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
@@ -248,7 +289,7 @@ func commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("requiredKeyValues:", requiredKeyValues)
 	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
 	var resp CommitResponse
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	client, err := rpc.Dial("tcp", sortedKvnodeIpPorts[0])
 	checkError("Error in commit(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.Commit", req, &resp)
 	checkError("Error in commit(), client.Call():", err, true)
