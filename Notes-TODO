@@ -1,0 +1,90 @@
+Hey Harlan! This is all my thoughts as I will not be able to work on A7 until Friday  :/
+Good news is it seems to be in prettty good shape.
+
+What I implemented over the weekend:
+
+- On call to AddBlock, nodes stop working on their current Block and consider the new added Block for a Parent of their next Block.
+	Once they found a Block and are in the middle of broadcasting it, nodes are allowed to finish before being interrupted by AddBlock.
+	Commits check if the received Block is the same transaction it is trying to commit, if so, stops trying to solve and proceeds to return to client (when numValidate is true). Otherwise, continues working on same transaction's commit Block, but considering the new Block as a possible parent.
+
+- Sort IpPorts of all nodes on call to NewConnection. This is to make all clients call nodes in the same order. This should allow nodes to stay mostly consistent as they most likely receive calls in order. Race condition where this is not true discussed below.
+
+- kvservice makes concurrent calls to all nodes on NewTX and Commit. It waits until all respond before returning to the client. It currently returns one of the responses (randomly). How to deal with choosing correct answer and dealing with inconsistent answers is discussed below.
+
+- Added mutexes (locking for minimum steps to avoid deadlocks) to all shared state in maps.
+
+- Abort transactions that are incompatible with the current state of keyValueStore (modified by previous successful commits)
+
+- Changed HashBlock struct to only have the TxID instead of the whole Transaction struct. This is because, since maps have a non-deterministic order of elements, hashes where failing verification on other nodes because the order of elements in the maps had changed. By having TxID's in the HashBlock, we fulfill the requirement of the HashBlock containing the transaction. The transaction's PutSet is now stored in the Block struct. 
+
+- Support forks and deal with selecting correctly from various leafBlocks. 
+
+- Commit Blocks end up on the longest branch. As far as I can tell, need to test more to verify.
+
+
+
+TODO:
+(And ideas how to implement)
+
+
+-- Client failures
+	Ignore, except if they can cause kvnode to crash. Silently fail??
+
+
+-- KVnode failures
+	
+	Clients should interpret RPC call failures as KVnode death. Probably mark and stop calling that node
+	Maybe have a struct NodeIpPort + IsAlive that stores the nodeIp's (in order) and if the node is deemed alive.
+
+	Kvnodes should conclude that broadcast -> AddBlock RPC failures as KVnode death. Probably mark and stop calling in a similar
+	manner as clients would, (described above).
+
+
+--- Inconsistent state at the kvnodes
+
+- Inconsistent answers on NewTX and Commit received by KVService
+	Most likely cause is race conditions. 
+
+	Example: NodeA and NodeB, Client1 is close to NodeA, and far from NodeB; Client2 is close to both. 
+	Client1 calls NewTX and Client2 immediately also calls NewTX. Since the calls to nodes happen in the same order, they will both first call NodeA and then call NodeB.
+	Client1 gets TxID = 1 from NodeA, Client2 gets TxID = 2 from NodeA.
+	Client1 is farther away from NodeB than Client2, so Client2 beats Client1 to NodeB even though Client1 issued the call to NewTX before Client2.
+	Result, NodeB gives Client2 TxID = 1, and then gives Client1 TxID = 2.   
+	
+	Options:
+	
+	1) For NewTX inconsistent answers, maybe retry? Simply discard TxID and keyValueStore (NewTransactionResponse) and try again? Seems simple. And note that in the above scenario the next call to NewTX would return a consistent answer (unless the same race condition happened again, which is unlikely).
+
+	2) For Commit inconsistent answers, retry is not an option (the system already depends on any Commits that happened.) I would choose majority answer, on tie, return Abort to client. Abort is the safest, client can allways retry TX.
+
+
+- Inconsistent blockChains between nodes
+
+	Caused by node failures. A node fails before finishing broadcasting a new Block to all the other nodes. This is likely because broadcast is sequential, not concurrent like the calls clients make to the nodes. I tried making the calls to AddBlock from broadcast to be concurrent, but the system did not like it... This case might be already half supported, because it is similar to a fork. A node not receiving a Block is similar to that node choosing to build on another block and effectivily ignoring the other. Since this is a random choice, 0.5 of the cases pass.
+
+	The problem is when a node receives a call to AddBlock with a Block that has a parent that the node does not have in its blockChain. (The parent hash is included with the Block and is needed for insertion into the blockChain).
+	This case could be identified by the nodes at the receipt of an AddBlock call. If the parent of the Block that they just received, does not exist in their blockChain map, this means they do not have that Block. 
+		Option here could be: 
+			Always send both the new Block and the new Block's parent Block in the AddBlock RPC. This is for the case that the parent Block does not exist in the receiving node's blockChain, to allow the recieving node to place both of them in the blockChain and thus fixing the case of not having all the Blocks that other nodes have. This would be simpler than implementing a GetBlock RPC call between nodes.
+
+
+	
+Note: Client failures should not cause inconsistent state at the kvnodes, because the calls that clients make to nodes all happen concurrently (within 
+	nanoseconds). The nodes will all get the calls even if the client dies before recieving answers. 
+
+
+
+-- Verification that a committed block is on the longest branch.
+	This is very difficult as far as I can tell, and seems to already be provided as a side-effect of the current design. So no need to check/support?? Need to test.
+	
+	My isATwinBlockValidated() function in the validateCommit() call fixes the case when there is a fork consisting of the same Commit Block simultaneously solved by 2 nodes and added to the blockChain of at least one of the nodes. One of the two will be chosen (randomly) as the next block to use as a parent, and the other will be on the shortest branch. It is ok to have both in the blockChain as only one of them will be on the longest branch. The problem was that one node would keep checking for validity of the Block not on the longest branch (hanging), while all other nodes would check validity of the Block on the longest branch (responding success). 
+	The fix consisted of, when a node is checking for validity of a Commit Block, it also checks for if there is a sibling block with the same TxID that is validated (on longest branch), and returns from the Commit call with success to the client.
+
+
+-- Test on Azure
+	All day Sunday, I tested on the Ugrad servers as my Azure account was inexplicably revoked/suspended. Ivan said it doesn't make sense and he contacted customer support. 
+	I would use at least 4 VM's for the nodes. 
+	Also, I recommend testing at different values for numZeroes. Since they will be testing at the byte level I recommend focusing on testing with numZeroes being multiples of 8. Specifically 16 for the fast case and 24 for the slow case. 32 takes like 5 minutes to solve one, and 8 seems to be ridiculously fast (although it would be interesting to see how the system handles it). For debugging cases, where different periods provide different results, it is convenient to use values other than multiples of 8 to determine what is going on. 
+
+-- Fixing GetChildrenTest to return all the blockChain (instead of just the first child of each node (gets stuck on non-longest branch)). This could be adjusted to verify that a given Commit Block is on the longest branch.
+
