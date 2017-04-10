@@ -206,6 +206,8 @@ func generateNoOpBlocks() {
 func generateNoOpBlock() {
 	fmt.Println("Generating a NoOp Block...")
 	fmt.Println("Block chain size:", len(blockChain), "number transactions:", len(transactions))
+	// TODO this printstate() actually seemed to help performance... Maybe could use a tiny sleep here?
+	printState()
 	if len(leafBlocks) > 1 {
 		fmt.Println("We have a fork!!!!!!!!!!!!!!")
 	}
@@ -436,6 +438,7 @@ func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 }
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
+// or a sibling Block with the same TxID has the correct number of decendants.
 func validateCommit(req CommitRequest, blockHash string) {
 	fmt.Println("In validateCommit()")
 	for {
@@ -446,11 +449,44 @@ func validateCommit(req CommitRequest, blockHash string) {
 		if isBlockValidated(block, req.ValidateNum) {
 			return
 		} else {
+			if isATwinBlockValidated(block, req.ValidateNum) {
+				return
+			}
 			time.Sleep(time.Second)
 			fmt.Println("block not yet validated...")
 		}
 	}
 }
+
+func isATwinBlockValidated(block Block, validateNum int) bool {
+	siblingBlock, exists := checkForTwin(block)
+	if exists {
+		if isBlockValidated(siblingBlock, validateNum) {
+			fmt.Println("Found a twin and it was validated!!!! Solved a fork scenario :) :) :)")
+			return true
+		}
+	}
+	return false
+}
+
+func checkForTwin(block Block) (twin Block, exists bool) {
+	mutex.Lock()
+	parentBlock := blockChain[block.HashBlock.ParentHash]
+	mutex.Unlock()
+	for _, siblingHash := range parentBlock.ChildrenHashes {
+		if siblingHash != block.Hash {
+			mutex.Lock()
+			siblingBlock := blockChain[siblingHash]
+			mutex.Unlock()
+			if	siblingBlock.HashBlock.TxID == block.HashBlock.TxID {
+				return siblingBlock, true
+			}
+		}
+	}
+	exists = false
+	return 
+}
+
 
 // Recursively traverses the longest branch of the blockChain tree starting at the given block,
 // if there are at least validateNum descendents returns true, else returns false  
