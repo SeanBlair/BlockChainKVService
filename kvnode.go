@@ -181,7 +181,6 @@ func main() {
 	isGenerateCommits = true
 	isWorkingOnCommit = false
 	mutex = &sync.Mutex{}
-	// printState()
 	go listenNodeRPCs()
 	go listenClientRPCs()
 	time.Sleep(4 * time.Second)
@@ -190,13 +189,11 @@ func main() {
 
 // Generates NoOp Blocks and adds to blockChain when not generating a Commit Block
 func generateNoOpBlocks() {
-	fmt.Println("In generateNoOpBlocks()")
 	for {
 		if isGenerateNoOps && !isWorkingOnCommit {
 			isWorkingOnNoOp = true
 			generateNoOpBlock()
 			isWorkingOnNoOp = false
-			// printState()
 			time.Sleep(time.Millisecond * 100)
 		} else {
 			time.Sleep(time.Second)
@@ -224,7 +221,6 @@ func generateNoOpBlock() {
 }
 
 func setCorrectParentHashAndDepth(block Block) Block {
-	fmt.Println("in setCorrectParentHashAndDepth()")
 	commitBlocks := getCommitLeafBlocks()
 	var parentBlock Block
 	// only one block (no fork), or all noOp blocks
@@ -253,7 +249,6 @@ func setCorrectParentHashAndDepth(block Block) Block {
 
 // returns leaf blocks that are Commit blocks (not NoOp blocks)
 func getCommitLeafBlocks() map[string]Block {
-	fmt.Println("in getCommitLeafBlocks()")
 	commitBlocks := make(map[string]Block)
 	mutex.Lock()
 	leafBlocksCopy := leafBlocks
@@ -281,7 +276,6 @@ func generateBlock(block *Block) (bool, string) {
 		hashString := string(hash)
 		b.Hash = hashString
 		addToBlockChain(b)
-		// printState()
 		broadcastBlock(b)
 		fmt.Println("Done generating new block")
 		return true, hashString
@@ -311,10 +305,6 @@ func printState () {
 		fmt.Println("    PutSet:")
 		for k := range tx.PutSet {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
-		}
-		fmt.Println("    KeySet:")
-		for k := range tx.KeySet {
-			fmt.Println("      Key:", k)
 		}
 	}
 	fmt.Println("-blockChain:")
@@ -348,12 +338,10 @@ func printBlock(blockHash string) {
 	fmt.Printf("%sBlock.Hash :%x\n", indent, block.Hash)
 	fmt.Printf("%sBlock.Depth :%v\n", indent, block.Depth)
 	fmt.Printf("%sBlock.ChildrenHashes :%x\n", indent, block.ChildrenHashes)
+	fmt.Printf("%sBlock.PutSet :%v\n", indent, block.PutSet)
 	hashBlock := block.HashBlock
 	fmt.Printf("%sBlock.HashBlock.ParentHash :%x\n", indent, hashBlock.ParentHash)
-	// fmt.Printf("%sBlock.HashBlock.PutSet :%v\n", indent, hashBlock.PutSet)
 	fmt.Printf("%sBlock.HashBlock.NodeID :%v\n", indent, hashBlock.NodeID)
-	fmt.Printf("%sBlock.HashBlock.Nonce :%x\n\n", indent, hashBlock.Nonce)
-
 	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash)
 	}
@@ -361,7 +349,6 @@ func printBlock(blockHash string) {
 
 // Returns the children hashes of the Block that has the given hash as key in the blockChain
 func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse) error {
-	fmt.Println("Received a call to GetChildren with:", req)
 	hash := req.ParentHash
 	if hash == "" {
 		hash = genesisHash
@@ -375,14 +362,12 @@ func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse
 
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
-	fmt.Println("Received a call to NewTransaction()")
 	txID := nextTransactionID
 	nextTransactionID++
 	mutex.Lock()
 	kvStore := keyValueStore
 	mutex.Unlock()
 	*resp = NewTransactionResp{txID, kvStore}
-	// printState()
 	return nil
 }
 
@@ -395,12 +380,10 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	transactions[tx.ID] = tx
 	mutex.Unlock()
 	isGenerateNoOps = false
-	fmt.Println("Commit Waiting for NoOp...")
 	for isWorkingOnNoOp {
 		// This stopped it from hanging... !
 		time.Sleep(time.Millisecond)
 	}
-	fmt.Println("Commit done waiting for NoOp.")
 	if !isCommitPossible(req.RequiredKeyValues) {
 		mutex.Lock()
 		t := transactions[tx.ID]
@@ -619,19 +602,14 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 			isGenerateNoOps = false
 			// stop generating Commits when we have a new Block in the chain
 			isGenerateCommits = false
-			fmt.Println("AddBlock is Waiting for NoOp...")
 			for isWorkingOnNoOp {
 				// This stopped it from hanging... !!!
 				time.Sleep(time.Millisecond)
 			}
-			fmt.Println("AddBlock is Done Waiting for NoOp")
-			
-			fmt.Println("AddBlock is Waiting for Commit")
 			for isWorkingOnCommit {
 				// This stopped it from hanging... !!!
 				time.Sleep(time.Millisecond)
 			}
-			fmt.Println("AddBlock is Done Waiting for Commit")
 			if hb.TxID > 0 {
 				tx := Transaction{ID: hb.TxID, PutSet: b.PutSet}
 				mutex.Lock()
@@ -641,20 +619,17 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 			addToBlockChain(b)
 			isGenerateCommits = true
 			isGenerateNoOps = true
-			// printState()
 			} ()
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
 		// TODO What to do??
 	}
-	// printState()
 	return nil
 }
 
 // Should set all the state that represents a commited transaction
 // called by both Commit or AddBlock
 func addToBlockChain(block Block) {
-	fmt.Println("In addToBlockChain()")
 	mutex.Lock()
 	blockChain[block.Hash] = block
 	mutex.Unlock()
