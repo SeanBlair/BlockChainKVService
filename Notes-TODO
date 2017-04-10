@@ -21,6 +21,8 @@ What I implemented over the weekend:
 
 - Commit Blocks end up on the longest branch. As far as I can tell, need to test more to verify.
 
+- Support validateNum for Commits
+
 
 
 TODO:
@@ -76,7 +78,7 @@ Note: Client failures should not cause inconsistent state at the kvnodes, becaus
 
 -- Verification that a committed block is on the longest branch.
 	This is very difficult as far as I can tell, and seems to already be provided as a side-effect of the current design. So no need to check/support?? Need to test.
-	
+
 	My isATwinBlockValidated() function in the validateCommit() call fixes the case when there is a fork consisting of the same Commit Block simultaneously solved by 2 nodes and added to the blockChain of at least one of the nodes. One of the two will be chosen (randomly) as the next block to use as a parent, and the other will be on the shortest branch. It is ok to have both in the blockChain as only one of them will be on the longest branch. The problem was that one node would keep checking for validity of the Block not on the longest branch (hanging), while all other nodes would check validity of the Block on the longest branch (responding success). 
 	The fix consisted of, when a node is checking for validity of a Commit Block, it also checks for if there is a sibling block with the same TxID that is validated (on longest branch), and returns from the Commit call with success to the client.
 
