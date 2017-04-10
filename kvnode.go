@@ -96,6 +96,7 @@ type Block struct {
 	Hash string
 	ChildrenHashes []string
 	Depth int
+	PutSet map[Key]Value
 	HashBlock HashBlock
 }
 
@@ -180,7 +181,7 @@ func main() {
 	isGenerateCommits = true
 	isWorkingOnCommit = false
 	mutex = &sync.Mutex{}
-	printState()
+	// printState()
 	go listenNodeRPCs()
 	go listenClientRPCs()
 	time.Sleep(4 * time.Second)
@@ -195,7 +196,7 @@ func generateNoOpBlocks() {
 			isWorkingOnNoOp = true
 			generateNoOpBlock()
 			isWorkingOnNoOp = false
-			printState()
+			// printState()
 			time.Sleep(time.Millisecond * 100)
 		} else {
 			time.Sleep(time.Second)
@@ -280,7 +281,7 @@ func generateBlock(block *Block) (bool, string) {
 		hashString := string(hash)
 		b.Hash = hashString
 		addToBlockChain(b)
-		printState()
+		// printState()
 		broadcastBlock(b)
 		fmt.Println("Done generating new block")
 		return true, hashString
@@ -381,7 +382,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	kvStore := keyValueStore
 	mutex.Unlock()
 	*resp = NewTransactionResp{txID, kvStore}
-	printState()
+	// printState()
 	return nil
 }
 
@@ -419,7 +420,7 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 			mutex.Unlock()
 			*resp = CommitResponse{false, 0, abortedMessage}
 			isGenerateNoOps = true
-		}
+		} else {
 		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
 		mutex.Lock()
@@ -428,7 +429,9 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		isGenerateNoOps = true
 		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
+		}	
 	}
+	printState()
 	return nil
 }
 
@@ -484,7 +487,10 @@ func isBlockValidated(block Block, validateNum int) bool {
 // or allows AddBlock to add it, returns its hash
 func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 	fmt.Println("Generating a Commit Block...")
-	block := Block { HashBlock: HashBlock{TxID: txid, NodeID: myNodeID, Nonce: 0} }	
+	mutex.Lock()
+	putSet := transactions[txid].PutSet
+	mutex.Unlock()
+	block := Block { PutSet: putSet, HashBlock: HashBlock{TxID: txid, NodeID: myNodeID, Nonce: 0} }	
 	for {
 		if isGenerateCommits {
 			isWorkingOnCommit = true
@@ -596,6 +602,7 @@ func broadcastBlock(block Block) {
 }
 
 func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
+	fmt.Println("Recieved a call to AddBlock with tid:", req.Block.HashBlock.TxID, "and PutSet:", req.Block.PutSet)
 	b := req.Block
 	hb := b.HashBlock
 	data := []byte(fmt.Sprintf("%v", hb))
@@ -624,20 +631,23 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				// This stopped it from hanging... !!!
 				time.Sleep(time.Millisecond)
 			}
-			fmt.Println("AddBlock is Done Waiting for Commit")	
-			tx := Transaction{ID: hb.TxID,}
-			mutex.Lock()
-			transactions[hb.TxID] = tx 
-			mutex.Unlock()
+			fmt.Println("AddBlock is Done Waiting for Commit")
+			if hb.TxID > 0 {
+				tx := Transaction{ID: hb.TxID, PutSet: b.PutSet}
+				mutex.Lock()
+				transactions[hb.TxID] = tx 
+				mutex.Unlock()	
+			}	
 			addToBlockChain(b)
 			isGenerateCommits = true
 			isGenerateNoOps = true
-			printState()
+			// printState()
 			} ()
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
 		// TODO What to do??
 	}
+	// printState()
 	return nil
 }
 
