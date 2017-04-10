@@ -20,14 +20,20 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
+	"strings"
+	"math"
+	"strconv"
+	"sync"
 )
 
 
 var (
-	kvnodeIpPorts []string
+	sortedKvnodeIpPorts []string
 	currentTransaction Transaction
 	originalKeyValueStore map[Key]Value
 	abortedMessage string = "This transaction is aborted!!"
+	mutex      *sync.Mutex
 )
 
 type Transaction struct {
@@ -147,35 +153,98 @@ type GetChildrenResponse struct {
 // node ip:port strings.
 func NewConnection(nodes []string) connection {
 	fmt.Println("kvservice received a call to NewConnection() with nodes:", nodes)
-	kvnodeIpPorts = nodes
-	fmt.Println("kvnodeIpPorts:", kvnodeIpPorts)
+	setSortedIpPorts(nodes)
+	fmt.Println("sortedKvnodeIpPorts:", sortedKvnodeIpPorts)
 	c := new(myconn)
 	return c
+}
+
+// sorts the unique ip addresses and sets sortedKvnodesIpPorts
+func setSortedIpPorts(nodes []string) {
+	nodeTotalKey := make(map[int]string)
+	var totalList []int
+	for _, node := range nodes {
+		sum := getWeightedSum(node)
+		totalList = append(totalList, sum)
+		// check if sum already in nodeTotalKey map
+		_, ok := nodeTotalKey[sum]
+		var err error
+		if ok {
+			err = errors.New("NewConnection was called with non-unique ip addresses")
+		}
+		checkError("Error in setSortedIpPorts():", err, true)
+		nodeTotalKey[sum] = node
+	}
+	// they are all unique
+	sort.Ints(totalList)
+	for _, sum := range totalList {
+		sortedKvnodeIpPorts = append(sortedKvnodeIpPorts, nodeTotalKey[sum])
+	}
+}
+
+// returns the weighted sum of the ipv4 address which represents a unique number for each possible Ipv4 address
+func getWeightedSum(ipPort string) (sum int) {
+	ip := strings.Split(ipPort, ":")
+	nums := strings.Split(ip[0], ".")
+	for i, n := range nums {
+		intN, err := strconv.Atoi(n)
+		checkError("Error in getSum(), strconv.Atoi()", err, true)
+		// a.b.c.d ==  a * 256^(4-0) + b * 256^(4-1) + c * 256^(4-2) + d * 256^(4-3)
+		// returns a unique number representing each ip address 
+		sum += int(math.Pow(256, float64(4 - i)) * float64(intN))
+	}
+	return
 }
 
 // Initializes a Transaction
 func (c *myconn) NewTX() (tx, error) {
 	fmt.Println("kvservice received a call to NewTX()")
+	mutex = &sync.Mutex{}
 	newTx := new(mytx)
-	newTx.ID = getNewTransactionID()
+	newTx.ID = getNewTransactionIDFromAll()
 	return newTx, nil
 }
 
+func getNewTransactionIDFromAll() (txid int) {
+	newTxResponses := make(map[string]NewTransactionResp)
+	count := 0
+	for _, nodeIpPort := range sortedKvnodeIpPorts {
+		go func(node string) {
+
+			newTx := getNewTransactionID(node)
+			mutex.Lock()
+			newTxResponses[node] = newTx 
+			mutex.Unlock()
+			count++
+		}(nodeIpPort)
+	}
+	// waits for all to respond
+	// TODO support dead kvnodes...
+	for (count < len(sortedKvnodeIpPorts)) {} 
+	if (count == len(sortedKvnodeIpPorts)) { 
+		fmt.Println("All responded and newTxResponses contains", newTxResponses)
+	} 
+	// TODO check and resolve different answers
+	for nodeIpP := range newTxResponses {
+		resp := newTxResponses[nodeIpP]
+		fmt.Println("Returning newTx response:", resp, " from node:", nodeIpP)
+		currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
+		originalKeyValueStore = resp.KeyValueStore
+		txid = resp.TxID
+		return
+	}
+	return
+}
+
 // Calls KVServer.NewTransaction RPC, returns a unique transaction ID
-func getNewTransactionID() int {
-	var resp NewTransactionResp
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+func getNewTransactionID(ipPort string) (resp NewTransactionResp) {
+	client, err := rpc.Dial("tcp", ipPort)
 	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.NewTransaction", true, &resp)
 	checkError("Error in getNewTransactionID(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in getNewTransactionID(), client.Close():", err, true)
-
-	currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
-	originalKeyValueStore = resp.KeyValueStore
-	printState()
-
-	return resp.TxID
+	return
 }
 
 // 
@@ -229,10 +298,11 @@ func (t *mytx) Put(k Key, v Value) (bool, error) {
 // Commits a transaction
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
+	mutex = &sync.Mutex{}
 	if currentTransaction.IsAborted {
 		return false, 0, errors.New(abortedMessage)
 	} else {
-		success, commitID, err = commit(validateNum)
+		success, commitID, err = commitAll(validateNum)
 		if success {
 			currentTransaction.IsCommitted = true
 			currentTransaction.CommitID = commitID
@@ -242,19 +312,46 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	return
 }
 
+// 
+func commitAll(validateNum int) (success bool, commitID int, err error) {
+	commitResponses := make(map[string]CommitResponse)
+	count := 0
+	for _, nodeIpPort := range sortedKvnodeIpPorts {
+		go func(node string) {
+			commitResp := commit(node, validateNum)
+			mutex.Lock()
+			commitResponses[node] = commitResp
+			mutex.Unlock()
+			count++
+		}(nodeIpPort)
+	}
+	// waits for all to respond
+	// TODO support dead kvnodes...
+	for(count < len(sortedKvnodeIpPorts)) {} 
+	if(count == len(sortedKvnodeIpPorts)) { 
+		fmt.Println("All responded and commitResponses contains", commitResponses)
+	} 
+	// TODO check and resolve different answers
+	for nodeIpP := range commitResponses {
+		resp := commitResponses[nodeIpP]
+		fmt.Println("Returning commit response:", resp, " from node:", nodeIpP)
+		return resp.Success, resp.CommitID, errors.New(resp.Err)
+	}
+	return
+}
+
 // Calls KVServer.Commit RPC to start the process of committing transaction txid
-func commit(validateNum int) (success bool, commitID int, err error) {
+func commit(nodeIpPort string, validateNum int) (resp CommitResponse) {
 	requiredKeyValues := getRequiredKeyValues()
 	fmt.Println("requiredKeyValues:", requiredKeyValues)
 	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
-	var resp CommitResponse
-	client, err := rpc.Dial("tcp", kvnodeIpPorts[0])
+	client, err := rpc.Dial("tcp", nodeIpPort)
 	checkError("Error in commit(), rpc.Dial():", err, true)
 	err = client.Call("KVServer.Commit", req, &resp)
 	checkError("Error in commit(), client.Call():", err, true)
 	err = client.Close()
 	checkError("Error in commit(), client.Close():", err, true)
-	return resp.Success, resp.CommitID, errors.New(resp.Err)
+	return 
 }
 
 // Creates map of the original values that keys in KeySet had in originalKeyValueStore

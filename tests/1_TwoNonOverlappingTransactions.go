@@ -15,12 +15,12 @@ import (
 )
 func main() {
 	var nodes []string
-	nodes = []string{"localhost:2222"}
+	nodes = []string{"198.162.33.28:2222", "198.162.33.46:2222"}
 
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
 
-	children := c.GetChildren(nodes[0], "parentHash")
+	children := c.GetChildren(nodes[0], "")
 	fmt.Printf("GetChildren returned: %v\n", children) 
 
 	t1, err := c.NewTX()
@@ -32,8 +32,8 @@ func main() {
 	success, v, err := t1.Get("A")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// success, txID, err := t1.Commit(0)
-	// fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
+	success, txID, err := t1.Commit(0)
+	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	// t2, err := c.NewTX()
 	// fmt.Printf("NewTX returned: %v, %v\n", t2, err)

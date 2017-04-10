@@ -14,7 +14,7 @@ import (
 )
 func main() {
 	var nodes []string
-	nodes = []string{"localhost:2222"}
+	nodes = []string{"52.233.40.133:2222"}
 
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
@@ -25,10 +25,10 @@ func main() {
 	t1, err := c.NewTX()
 	fmt.Printf("NewTX returned: %v, %v\n", t1, err)
 
-	success, err := t1.Put("A", "T1")
+	success, err := t1.Put("B", "T2")
 	fmt.Printf("Put returned: %v, %v\n", success, err)
 
-	success, v, err := t1.Get("A")
+	success, v, err := t1.Get("B")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
 	success, txID, err := t1.Commit(1)
