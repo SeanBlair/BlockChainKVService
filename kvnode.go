@@ -342,7 +342,7 @@ func printBlock(blockHash string) {
 	fmt.Printf("%sBlock.PutSet :%v\n", indent, block.PutSet)
 	hashBlock := block.HashBlock
 	fmt.Printf("%sBlock.HashBlock.ParentHash :%x\n", indent, hashBlock.ParentHash)
-	fmt.Printf("%sBlock.HashBlock.NodeID :%v\n", indent, hashBlock.NodeID)
+	fmt.Printf("%sBlock.HashBlock.NodeID :%v\n\n", indent, hashBlock.NodeID)
 	for _, childHash := range block.ChildrenHashes {
 		printBlock(childHash)
 	}
@@ -437,14 +437,17 @@ func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
 func validateCommit(req CommitRequest, blockHash string) {
-	mutex.Lock()
-	block := blockChain[blockHash]
-	mutex.Unlock()
+	fmt.Println("In validateCommit()")
 	for {
+		mutex.Lock()
+		block := blockChain[blockHash]
+		mutex.Unlock()
+		fmt.Println("Trying to validate a block with ID", block.HashBlock.TxID, "and children:", len(block.ChildrenHashes))
 		if isBlockValidated(block, req.ValidateNum) {
 			return
 		} else {
 			time.Sleep(time.Second)
+			fmt.Println("block not yet validated...")
 		}
 	}
 }
@@ -459,6 +462,7 @@ func isBlockValidated(block Block, validateNum int) bool {
 			mutex.Lock()
 			childBlock := blockChain[child]
 			mutex.Unlock()
+			fmt.Println("The child block has depth:", childBlock.Depth)
 			if isBlockValidated(childBlock, validateNum - 1) {
 				return true
 			}
