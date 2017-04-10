@@ -24,6 +24,7 @@ import (
 	"strings"
 	"math"
 	"strconv"
+	"sync"
 )
 
 
@@ -32,6 +33,7 @@ var (
 	currentTransaction Transaction
 	originalKeyValueStore map[Key]Value
 	abortedMessage string = "This transaction is aborted!!"
+	mutex      *sync.Mutex
 )
 
 type Transaction struct {
@@ -197,6 +199,7 @@ func getWeightedSum(ipPort string) (sum int) {
 // Initializes a Transaction
 func (c *myconn) NewTX() (tx, error) {
 	fmt.Println("kvservice received a call to NewTX()")
+	mutex = &sync.Mutex{}
 	newTx := new(mytx)
 	newTx.ID = getNewTransactionIDFromAll()
 	return newTx, nil
@@ -207,7 +210,11 @@ func getNewTransactionIDFromAll() (txid int) {
 	count := 0
 	for _, nodeIpPort := range sortedKvnodeIpPorts {
 		go func(node string) {
-			newTxResponses[node] = getNewTransactionID(node)
+
+			newTx := getNewTransactionID(node)
+			mutex.Lock()
+			newTxResponses[node] = newTx 
+			mutex.Unlock()
 			count++
 		}(nodeIpPort)
 	}
@@ -291,6 +298,7 @@ func (t *mytx) Put(k Key, v Value) (bool, error) {
 // Commits a transaction
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 	fmt.Println("kvservice received a call to Commit(", validateNum, ")")
+	mutex = &sync.Mutex{}
 	if currentTransaction.IsAborted {
 		return false, 0, errors.New(abortedMessage)
 	} else {
@@ -310,7 +318,10 @@ func commitAll(validateNum int) (success bool, commitID int, err error) {
 	count := 0
 	for _, nodeIpPort := range sortedKvnodeIpPorts {
 		go func(node string) {
-			commitResponses[node] = commit(node, validateNum)
+			commitResp := commit(node, validateNum)
+			mutex.Lock()
+			commitResponses[node] = commitResp
+			mutex.Unlock()
 			count++
 		}(nodeIpPort)
 	}

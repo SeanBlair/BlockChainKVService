@@ -95,24 +95,21 @@ type Block struct {
 	// hash of HashBlock field
 	Hash string
 	ChildrenHashes []string
-	IsOnLongestBranch bool
 	Depth int
 	HashBlock HashBlock
 }
 
-// The part of a Block that gets hashed
+// The part of a Block that gets hashed (Read only 
+// except for the Nonce and the ParentHash when computing the hash)
 type HashBlock struct {
 	ParentHash string
-	Txn Transaction
+	TxID int
 	NodeID int
 	Nonce uint32
 }
 
 type Transaction struct {
 	ID int
-
-	// For storing this transaction's Puts before it commits.
-	// On commit, they will be added to the keyValueStore
 	PutSet map[Key]Value
 	KeySet map[Key]bool
 	IsAborted bool
@@ -173,7 +170,7 @@ func main() {
 	leafBlocks = make(map[string]Block)
 
 	// Add genesis block to blockChain map
-	genesisBlock := Block{Hash: genesisHash, IsOnLongestBranch: true, Depth: 0}
+	genesisBlock := Block{Hash: genesisHash, Depth: 0}
 	blockChain[genesisHash] = genesisBlock
 	// Add genesis block to leafBlocks map
 	leafBlocks[genesisHash] = genesisBlock
@@ -213,7 +210,7 @@ func generateNoOpBlock() {
 	if len(leafBlocks) > 1 {
 		fmt.Println("We have a fork!!!!!!!!!!!!!!")
 	}
-	noOpBlock := Block { HashBlock: HashBlock{Txn: Transaction{}, NodeID: myNodeID, Nonce: 0}}
+	noOpBlock := Block { HashBlock: HashBlock{TxID: 0, NodeID: myNodeID, Nonce: 0}}
 	noOpBlock = setCorrectParentHashAndDepth(noOpBlock)
 	for isGenerateNoOps {
 		success, _ := generateBlock(&noOpBlock)
@@ -261,7 +258,7 @@ func getCommitLeafBlocks() map[string]Block {
 	leafBlocksCopy := leafBlocks
 	mutex.Unlock()
 	for leafBlockHash := range leafBlocksCopy {
-		if leafBlocksCopy[leafBlockHash].HashBlock.Txn.ID != 0 {
+		if leafBlocksCopy[leafBlockHash].HashBlock.TxID != 0 {
 			commitLeafBlock := leafBlocksCopy[leafBlockHash]
 			commitBlocks[leafBlockHash] = commitLeafBlock
 		}
@@ -282,8 +279,6 @@ func generateBlock(block *Block) (bool, string) {
 	// if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
-		// TODO make sure this is true!!!
-		b.IsOnLongestBranch = true
 		addToBlockChain(b)
 		printState()
 		broadcastBlock(b)
@@ -348,14 +343,13 @@ func printBlock(blockHash string) {
 	for i := 0; i < block.Depth; i++ {
 		indent += " "
 	}
-	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.Txn.ID)
+	fmt.Printf("%sBlockTransactionID: %v\n", indent, block.HashBlock.TxID)
 	fmt.Printf("%sBlock.Hash :%x\n", indent, block.Hash)
 	fmt.Printf("%sBlock.Depth :%v\n", indent, block.Depth)
 	fmt.Printf("%sBlock.ChildrenHashes :%x\n", indent, block.ChildrenHashes)
-	fmt.Printf("%sBlock.IsOnLongestBranch :%v\n", indent, block.IsOnLongestBranch)
 	hashBlock := block.HashBlock
 	fmt.Printf("%sBlock.HashBlock.ParentHash :%x\n", indent, hashBlock.ParentHash)
-	fmt.Printf("%sBlock.HashBlock.Txn :%v\n", indent, hashBlock.Txn)
+	// fmt.Printf("%sBlock.HashBlock.PutSet :%v\n", indent, hashBlock.PutSet)
 	fmt.Printf("%sBlock.HashBlock.NodeID :%v\n", indent, hashBlock.NodeID)
 	fmt.Printf("%sBlock.HashBlock.Nonce :%x\n\n", indent, hashBlock.Nonce)
 
@@ -428,7 +422,6 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		}
 		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
-		// Idea: check if Block.IsOnLongestBranch == true. Maybe don't set it until sure???
 		mutex.Lock()
 		commitId := transactions[tx.ID].CommitID
 		mutex.Unlock()
@@ -472,23 +465,18 @@ func validateCommit(req CommitRequest, blockHash string) {
 // Recursively traverses the longest branch of the blockChain tree starting at the given block,
 // if there are at least validateNum descendents returns true, else returns false  
 func isBlockValidated(block Block, validateNum int) bool {
-	// TODO is this bool necessary?? Is this the only place using it??
-	if !block.IsOnLongestBranch {
-		return false
+	if validateNum == 0 {
+		return true
 	} else {
-		if validateNum == 0 {
-			return true
-		} else {
-			for _, child := range block.ChildrenHashes {
-				mutex.Lock()
-				childBlock := blockChain[child]
-				mutex.Unlock()
-				if isBlockValidated(childBlock, validateNum - 1) {
-					return true
-				}
+		for _, child := range block.ChildrenHashes {
+			mutex.Lock()
+			childBlock := blockChain[child]
+			mutex.Unlock()
+			if isBlockValidated(childBlock, validateNum - 1) {
+				return true
 			}
-			return false
 		}
+		return false
 	}
 }
 
@@ -496,10 +484,7 @@ func isBlockValidated(block Block, validateNum int) bool {
 // or allows AddBlock to add it, returns its hash
 func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 	fmt.Println("Generating a Commit Block...")
-	mutex.Lock()
-	tx := transactions[txid]
-	mutex.Unlock()
-	block := Block { HashBlock: HashBlock{Txn: tx, NodeID: myNodeID, Nonce: 0} }	
+	block := Block { HashBlock: HashBlock{TxID: txid, NodeID: myNodeID, Nonce: 0} }	
 	for {
 		if isGenerateCommits {
 			isWorkingOnCommit = true
@@ -604,6 +589,7 @@ func broadcastBlock(block Block) {
 			checkError("Failed KVNode.AddBlock in broadcastBlock()", err, false)
 			if(resp == false) {
 				// TODO: Decide what to do when node fails to accept new block
+				fmt.Println(id, ip, "did not accept the HashBlock!!!!!!")
 			}
 		}
 	}
@@ -615,6 +601,8 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	data := []byte(fmt.Sprintf("%v", hb))
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
+	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
+	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
 	*resp = isLeadingNumZeroes(hash)
 	if(*resp == true) {
 		fmt.Println("Received HashBlock: VERIFIED")
@@ -637,7 +625,10 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				time.Sleep(time.Millisecond)
 			}
 			fmt.Println("AddBlock is Done Waiting for Commit")	
-
+			tx := Transaction{ID: hb.TxID,}
+			mutex.Lock()
+			transactions[hb.TxID] = tx 
+			mutex.Unlock()
 			addToBlockChain(b)
 			isGenerateCommits = true
 			isGenerateNoOps = true
@@ -645,6 +636,7 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 			} ()
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
+		// TODO What to do??
 	}
 	return nil
 }
@@ -658,9 +650,13 @@ func addToBlockChain(block Block) {
 	mutex.Unlock()
 	setParentsNewChild(block)
 	updateLeafBlocks(block)
-	tx := block.HashBlock.Txn
+	hBlock := block.HashBlock
+	txid := hBlock.TxID
 	// a Commit transaction
-	if tx.ID > 0 {
+	if txid > 0 {
+		mutex.Lock()
+		tx := transactions[txid]
+		mutex.Unlock()
 		putSet := tx.PutSet
 		for k := range putSet {
 			mutex.Lock()
@@ -671,7 +667,7 @@ func addToBlockChain(block Block) {
 		tx.CommitHash = block.Hash
 		tx.CommitID = block.Depth
 		mutex.Lock()
-		transactions[tx.ID] = tx
+		transactions[txid] = tx
 		mutex.Unlock()
 	}
 	// TODO if a commit block, ensure that it is on the longest chain. ??
