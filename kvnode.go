@@ -581,6 +581,8 @@ func broadcastBlock(block Block) {
 				// TODO: Decide what to do when node fails to accept new block
 				fmt.Println(id, ip, "did not accept the HashBlock!!!!!!")
 			}
+			err = client.Close()
+			checkError("Error in commit(), client.Close():", err, true)
 		}
 	}
 }
