@@ -205,6 +205,7 @@ func generateNoOpBlocks() {
 // Returns either when isGenerateNoOps = false or successfully generates 1 NoOp
 func generateNoOpBlock() {
 	fmt.Println("Generating a NoOp Block...")
+	fmt.Println("Block chain size:", len(blockChain), "number transactions:", len(transactions))
 	if len(leafBlocks) > 1 {
 		fmt.Println("We have a fork!!!!!!!!!!!!!!")
 	}
