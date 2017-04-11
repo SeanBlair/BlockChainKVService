@@ -55,7 +55,12 @@ TODO:
 	
 	Options:
 	
-	1) For NewTX inconsistent answers, maybe retry? Simply discard TxID and keyValueStore (NewTransactionResponse) and try again? Seems simple. And note that in the above scenario the next call to NewTX would return a consistent answer (unless the same race condition happened again, which is unlikely).
+	0) Since the kvnode does not keep a record of new transactions, (it simply returns the next id), if the nextTransactioID variable increases by say 10 each time, when a client receives inconsistent answers, it could choose one that is in between the min and max of its inconsistent answers. this would ensure that each client has a unique txid which is the only important part. 
+
+	(unneeded if choose 0) 1) For NewTX inconsistent answers, maybe retry? Simply discard TxID and keyValueStore (NewTransactionResponse) and try again? Seems simple. And note that in the above scenario the next call to NewTX would return a consistent answer (unless the same race condition happened again, which is unlikely). (unneeded if choose 0) 
+
+	0.1) For inconsistent keyValueStores on NewTX, more complicated.... Might have to retry... Or choose majority answer...
+
 
 	2) For Commit inconsistent answers, retry is not an option (the system already depends on any Commits that happened.) I would choose majority answer, on tie, return Abort to client. Abort is the safest, client can allways retry TX.
 
