@@ -742,8 +742,20 @@ func updateLeafBlocks(block Block) {
 // Adds block.Hash to its parent's ChildrenHashes
 func setParentsNewChild(block Block) {
 	mutex.Lock()
-	parentBlock := blockChain[block.HashBlock.ParentHash]
+	parentBlock, ok := blockChain[block.HashBlock.ParentHash]
 	mutex.Unlock()
+	if !ok {
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("The following block's parent does not exist in my blockChain!!!!!!!")
+		printBlock(block.Hash)
+	}
 	children := parentBlock.ChildrenHashes
 	children = append(children, block.Hash)
 	parentBlock.ChildrenHashes = children
