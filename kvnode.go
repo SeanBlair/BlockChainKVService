@@ -48,7 +48,7 @@ var (
 
 	numLeadingZeroes int 
 	// nodeIPs []string
-	nodeIpAndStatuses []NodeIpPortNStatus
+	nodeIpAndStatuses []NodeIpPortStatus
 	myNodeID int 
 	listenKVNodeIpPort string
 	listenClientIpPort string
@@ -120,7 +120,7 @@ type Transaction struct {
 	CommitHash string
 }
 
-type NodeIpPortNStatus struct {
+type NodeIpPortStatus struct {
 	IpPort string
 	IsAlive bool
 }
@@ -802,14 +802,14 @@ func ParseArguments() (err error) {
 	return
 }
 
-func parseNodeFile(nodeFile string) (nodeIpNStatuses []NodeIpPortNStatus) {
+func parseNodeFile(nodeFile string) (nodeIpNStatuses []NodeIpPortStatus) {
 	nodeContent, err := ioutil.ReadFile(nodeFile)
 	checkError("Failed to parse Nodefile: ", err, true)
 	nodeIPs := strings.Split(string(nodeContent), "\n")
 	nodeIPs = nodeIPs[:len(nodeIPs)-1] // Remove empty string
 	fmt.Printf(" Nodes = %v, length = %v\n", nodeIPs, len(nodeIPs))
 	for _, nodeIp := range nodeIPs {
-		nodeAndStatus := NodeIpPortNStatus{nodeIp, true}
+		nodeAndStatus := NodeIpPortStatus{nodeIp, true}
 		nodeIpNStatuses = append(nodeIpNStatuses, nodeAndStatus)
 	}
 	return
