@@ -29,7 +29,7 @@ import (
 
 
 var (
-	sortedKvnodeIpPorts []string
+	sortedKvnodeIpPortStatuses []NodeIpPortStatus
 	currentTransaction Transaction
 	originalKeyValueStore map[Key]Value
 	abortedMessage string = "This transaction is aborted!!"
@@ -45,6 +45,11 @@ type Transaction struct {
 	IsAborted bool
 	IsCommitted bool
 	CommitID int
+}
+
+type NodeIpPortStatus struct {
+	IpPort string
+	IsAlive bool
 }
 
 // Represents a key in the system.
@@ -154,7 +159,7 @@ type GetChildrenResponse struct {
 func NewConnection(nodes []string) connection {
 	fmt.Println("kvservice received a call to NewConnection() with nodes:", nodes)
 	setSortedIpPorts(nodes)
-	fmt.Println("sortedKvnodeIpPorts:", sortedKvnodeIpPorts)
+	fmt.Println("sortedKvnodeIpPortStatuses:", sortedKvnodeIpPortStatuses)
 	c := new(myconn)
 	return c
 }
@@ -178,7 +183,8 @@ func setSortedIpPorts(nodes []string) {
 	// they are all unique
 	sort.Ints(totalList)
 	for _, sum := range totalList {
-		sortedKvnodeIpPorts = append(sortedKvnodeIpPorts, nodeTotalKey[sum])
+		nodeIpPortStatus := NodeIpPortStatus{nodeTotalKey[sum], true}
+		sortedKvnodeIpPortStatuses = append(sortedKvnodeIpPortStatuses, nodeIpPortStatus)
 	}
 }
 
@@ -205,20 +211,20 @@ func (c *myconn) NewTX() (tx, error) {
 	return newTx, nil
 }
 
+// Returns a transaction Id by querying all kvnodes.
+// If none alive (impossible according to specs), returns -1
 func getNewTransactionIDFromAll() (txid int) {
 	newTxResponses := make(map[string]NewTransactionResp)
 	txChannel := make(chan(NewTransactionResp))
 	nodeChannel := make(chan(string))
-	for _, nodeIpPort := range sortedKvnodeIpPorts {
-		go func(node string) {
-			txChannel <- getNewTransactionID(node)
-			nodeChannel <- node
-		}(nodeIpPort)
+	for i, nodeIpPortStatus := range sortedKvnodeIpPortStatuses {
+		go func(nodeIP string, index int) {
+			txChannel <- getNewTransactionID(nodeIP, index)
+			nodeChannel <- nodeIP
+		}(nodeIpPortStatus.IpPort, i)
 	}
-	
-	// TODO support dead kvnodes... 
 	// waits for all to respond
-	for i := 0; i < 4; i++ {
+	for i := 0; i < len(sortedKvnodeIpPortStatuses); i++ {
 		newTx := <-txChannel
 		node := <-nodeChannel
 		mutex.Lock()
@@ -227,25 +233,41 @@ func getNewTransactionIDFromAll() (txid int) {
 	}
 	fmt.Println("Received all responses and they are:", newTxResponses)
 	// TODO check and resolve different answers
+	// currently just randomly returns one from a non-dead node...
 	for nodeIpP := range newTxResponses {
 		resp := newTxResponses[nodeIpP]
-		fmt.Println("Returning newTx response:", resp, " from node:", nodeIpP)
-		currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
-		originalKeyValueStore = resp.KeyValueStore
-		txid = resp.TxID
-		return
+		if resp.TxID != -1 {
+			fmt.Println("Returning newTx response:", resp, " from node:", nodeIpP)
+			currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
+			originalKeyValueStore = resp.KeyValueStore
+			txid = resp.TxID
+			return
+		}
 	}
-	return
+	return -1
 }
 
 // Calls KVServer.NewTransaction RPC, returns a unique transaction ID
-func getNewTransactionID(ipPort string) (resp NewTransactionResp) {
+// if the called node is dead, sets its IsAlive = false and returns TxID -1
+func getNewTransactionID(ipPort string, index int) (resp NewTransactionResp) {
 	client, err := rpc.Dial("tcp", ipPort)
-	checkError("Error in getNewTransactionID(), rpc.Dial():", err, true)
+	checkError("Error in getNewTransactionID(), rpc.Dial():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return NewTransactionResp{-1, nil}
+	}
 	err = client.Call("KVServer.NewTransaction", true, &resp)
-	checkError("Error in getNewTransactionID(), client.Call():", err, true)
+	checkError("Error in getNewTransactionID(), client.Call():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return NewTransactionResp{-1, nil}
+	}
 	err = client.Close()
-	checkError("Error in getNewTransactionID(), client.Close():", err, true)
+	checkError("Error in getNewTransactionID(), client.Close():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return NewTransactionResp{-1, nil}
+	} 
 	return
 }
 
@@ -255,11 +277,20 @@ func (c *myconn) GetChildren(node string, parentHash string) (children []string)
 	req := GetChildrenRequest{parentHash}
 	var resp GetChildrenResponse
 	client, err := rpc.Dial("tcp", node)
-	checkError("Error in GetChildren(), rpc.Dial():", err, true)
+	checkError("Error in GetChildren(), rpc.Dial():", err, false)
+	if err != nil {
+		return []string{"The provided node is dead!!!"}
+	}
 	err = client.Call("KVServer.GetChildren", req, &resp)
-	checkError("Error in GetChildren(), client.Call():", err, true)
+	checkError("Error in GetChildren(), client.Call():", err, false)
+	if err != nil {
+		return []string{"The provided node is dead!!!"}
+	}
 	err = client.Close()
-	checkError("Error in GetChildren(), client.Close():", err, true)
+	checkError("Error in GetChildren(), client.Close():", err, false)
+	if err != nil {
+		return []string{"The provided node is dead!!!"}
+	}
 	return resp.Children
 }
 
@@ -319,16 +350,14 @@ func commitAll(validateNum int) (success bool, commitID int, err error) {
 	commitResponses := make(map[string]CommitResponse)
 	commitChan := make(chan(CommitResponse))
 	nodeChan := make(chan(string))
-	for _, nodeIpPort := range sortedKvnodeIpPorts {
-		go func(node string) {
-			commitChan <- commit(node, validateNum)
+	for i, nodeIpPortStatus := range sortedKvnodeIpPortStatuses {
+		go func(node string, index int) {
+			commitChan <- commit(node, validateNum, index)
 			nodeChan <- node
-		}(nodeIpPort)
+		}(nodeIpPortStatus.IpPort, i)
 	}
-	
-	// TODO support dead kvnodes...
 	// waits for all to respond
-	for i := 0; i < len(sortedKvnodeIpPorts); i++ {
+	for i := 0; i < len(sortedKvnodeIpPortStatuses); i++ {
 		commitResp := <-commitChan
 		node := <- nodeChan
 		mutex.Lock()
@@ -336,27 +365,45 @@ func commitAll(validateNum int) (success bool, commitID int, err error) {
 		mutex.Unlock()  
 	}
 	fmt.Println("Received all responses and they are:", commitResponses)
-	
+
 	// TODO check and resolve different answers
+	// currently returns the first successful answer...
 	for nodeIpP := range commitResponses {
 		resp := commitResponses[nodeIpP]
-		fmt.Println("Returning commit response:", resp, " from node:", nodeIpP)
-		return resp.Success, resp.CommitID, errors.New(resp.Err)
+		// TODO don't be so optimistic?
+		// optimistic, if one was successful, nailed it!!
+		if resp.Success {
+			fmt.Println("Returning commit response:", resp, " from node:", nodeIpP)
+			return resp.Success, resp.CommitID, errors.New(resp.Err)
+		}
 	}
-	return
+	return false, -1, errors.New("All nodes are dead???? Specs say otherwise...")
 }
 
 // Calls KVServer.Commit RPC to start the process of committing transaction txid
-func commit(nodeIpPort string, validateNum int) (resp CommitResponse) {
+func commit(nodeIpPort string, validateNum int, index int) (resp CommitResponse) {
+	deadNodeMessage := "The queried kvnode is dead!!!"
 	requiredKeyValues := getRequiredKeyValues()
 	fmt.Println("requiredKeyValues:", requiredKeyValues)
 	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
 	client, err := rpc.Dial("tcp", nodeIpPort)
-	checkError("Error in commit(), rpc.Dial():", err, true)
+	checkError("Error in commit(), rpc.Dial():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return CommitResponse{false, -1, deadNodeMessage}
+	}
 	err = client.Call("KVServer.Commit", req, &resp)
-	checkError("Error in commit(), client.Call():", err, true)
+	checkError("Error in commit(), client.Call():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return CommitResponse{false, -1, deadNodeMessage}
+	}
 	err = client.Close()
-	checkError("Error in commit(), client.Close():", err, true)
+	checkError("Error in commit(), client.Close():", err, false)
+	if err != nil {
+		sortedKvnodeIpPortStatuses[index].IsAlive = false
+		return CommitResponse{false, -1, deadNodeMessage}
+	}
 	return 
 }
 

@@ -1,37 +1,11 @@
 Hey Harlan! This is all my thoughts as I will not be able to work on A7 until Friday  :/
 Good news is it seems to be in prettty good shape.
 
-What I implemented over the weekend:
-
-- On call to AddBlock, nodes stop working on their current Block and consider the new added Block for a Parent of their next Block.
-	Once they found a Block and are in the middle of broadcasting it, nodes are allowed to finish before being interrupted by AddBlock.
-	Commits check if the received Block is the same transaction it is trying to commit, if so, stops trying to solve and proceeds to return to client (when numValidate is true). Otherwise, continues working on same transaction's commit Block, but considering the new Block as a possible parent.
-
-- Sort IpPorts of all nodes on call to NewConnection. This is to make all clients call nodes in the same order. This should allow nodes to stay mostly consistent as they most likely receive calls in order. Race condition where this is not true discussed below.
-
-- kvservice makes concurrent calls to all nodes on NewTX and Commit. It waits until all respond before returning to the client. It currently returns one of the responses (randomly). How to deal with choosing correct answer and dealing with inconsistent answers is discussed below.
-
-- Added mutexes (locking for minimum steps to avoid deadlocks) to all shared state in maps.
-
-- Abort transactions that are incompatible with the current state of keyValueStore (modified by previous successful commits)
-
-- Changed HashBlock struct to only have the TxID instead of the whole Transaction struct. This is because, since maps have a non-deterministic order of elements, hashes where failing verification on other nodes because the order of elements in the maps had changed. By having TxID's in the HashBlock, we fulfill the requirement of the HashBlock containing the transaction. The transaction's PutSet is now stored in the Block struct. 
-
-- Support forks and deal with selecting correctly from various leafBlocks. 
-
-- Commit Blocks end up on the longest branch. As far as I can tell, need to test more to verify.
-
-- Support validateNum for Commits
-
-
-
-TODO:
-(And ideas how to implement)
-
+DONE? (need to test more)
 
 -- Client failures
 	Ignore, except if they can cause kvnode to crash. Silently fail??
-
+	Tested, they do not seem to cause a problem... If a client issues a commit request and then fails, the commit succeeds. This is ok, per piazza @581
 
 -- KVnode failures
 	
@@ -41,6 +15,9 @@ TODO:
 	Kvnodes should conclude that broadcast -> AddBlock RPC failures as KVnode death. Probably mark and stop calling in a similar
 	manner as clients would, (described above).
 
+
+TODO:
+(And ideas how to implement)
 
 --- Inconsistent state at the kvnodes
 

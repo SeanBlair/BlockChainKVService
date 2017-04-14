@@ -47,7 +47,8 @@ var (
 	leafBlocks map[string]Block
 
 	numLeadingZeroes int 
-	nodeIPs []string
+	// nodeIPs []string
+	nodeIpAndStatuses []NodeIpPortStatus
 	myNodeID int 
 	listenKVNodeIpPort string
 	listenClientIpPort string
@@ -119,6 +120,11 @@ type Transaction struct {
 	CommitHash string
 }
 
+type NodeIpPortStatus struct {
+	IpPort string
+	IsAlive bool
+}
+
 // For registering RPC's
 type KVNode int
 type KVServer int
@@ -160,7 +166,7 @@ func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
 	fmt.Println("KVNode's command line arguments are:\ngenesisHash:", genesisHash, 
-		"numLeadingZeroes:", numLeadingZeroes, "nodesFilePath:", nodeIPs, "myNodeID:", myNodeID, 
+		"numLeadingZeroes:", numLeadingZeroes, "nodeIpAndStatuses:", nodeIpAndStatuses, "myNodeID:", myNodeID, 
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
 	nextTransactionID = 1
@@ -314,6 +320,7 @@ func printState () {
 	printBlockChain()
 	fmt.Println("blockChain size:", len(blockChain))
 	fmt.Println("Total number of transactions is:", len(transactions), "\n")
+	fmt.Println("Nodes List and Status:", nodeIpAndStatuses)
 }
 
 // Prints the blockChain to console
@@ -404,7 +411,7 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 			t.IsAborted = true
 			transactions[tx.ID] = t
 			mutex.Unlock()
-			*resp = CommitResponse{false, 0, abortedMessage}
+			*resp = CommitResponse{false, 0, abortedMessage + "Another node committed a conflicting transaction!!"}
 			isGenerateNoOps = true
 		} else {
 		// TODO check that it is on longest branch...
@@ -607,22 +614,35 @@ func broadcastBlock(block Block) {
 	fmt.Println("In broadcastBlock()")
 	req := AddBlockRequest{block}
 
-	for i, ip := range nodeIPs {
+	for i, node := range nodeIpAndStatuses {
 		id := i + 1
-		if(id == myNodeID) {
+		if(id == myNodeID) || !node.IsAlive {
 			continue
 		} else {
-			fmt.Println(id, ip)
+			fmt.Println(id, node.IpPort)
 			var resp bool
-			client, err := rpc.Dial("tcp", ip)
+			client, err := rpc.Dial("tcp", node.IpPort)
+			checkError("Error in broadcastBlock(), rpc.Dial()", err, false)
+			if err != nil {
+				nodeIpAndStatuses[i].IsAlive = false
+				continue
+			}
 			err = client.Call("KVNode.AddBlock", req, &resp)
-			checkError("Failed KVNode.AddBlock in broadcastBlock()", err, false)
+			checkError("Error in broadcastBlock(), client.Call()", err, false)
+			if err != nil {
+				nodeIpAndStatuses[i].IsAlive = false
+				continue
+			}
 			if(resp == false) {
 				// TODO: Decide what to do when node fails to accept new block
-				fmt.Println(id, ip, "did not accept the HashBlock!!!!!!")
+				fmt.Println(id, node.IpPort, "did not accept the HashBlock!!!!!!")
 			}
 			err = client.Close()
-			checkError("Error in commit(), client.Close():", err, true)
+			checkError("Error in commit(), client.Close():", err, false)
+			if err != nil {
+				nodeIpAndStatuses[i].IsAlive = false
+				continue
+			}
 		}
 	}
 }
@@ -769,7 +789,7 @@ func ParseArguments() (err error) {
 		genesisHash = arguments[0]
 		numLeadingZeroes, err = strconv.Atoi(arguments[1])
 		checkError("Error in ParseArguments(), strconv.Atoi(arguments[1]):", err, true)
-		nodeIPs = parseNodeFile(arguments[2])
+		nodeIpAndStatuses = parseNodeFile(arguments[2])
 		myNodeID, err = strconv.Atoi(arguments[3])
 		checkError("Error in ParseArguments(), strconv.Atoi(arguments[3]):", err, true)
 		listenKVNodeIpPort = arguments[4]
@@ -782,13 +802,16 @@ func ParseArguments() (err error) {
 	return
 }
 
-func parseNodeFile(nodeFile string) (nodeIPs []string) {
-	var err error
+func parseNodeFile(nodeFile string) (nodeIpNStatuses []NodeIpPortStatus) {
 	nodeContent, err := ioutil.ReadFile(nodeFile)
 	checkError("Failed to parse Nodefile: ", err, true)
-	nodeIPs = strings.Split(string(nodeContent), "\n")
+	nodeIPs := strings.Split(string(nodeContent), "\n")
 	nodeIPs = nodeIPs[:len(nodeIPs)-1] // Remove empty string
 	fmt.Printf(" Nodes = %v, length = %v\n", nodeIPs, len(nodeIPs))
+	for _, nodeIp := range nodeIPs {
+		nodeAndStatus := NodeIpPortStatus{nodeIp, true}
+		nodeIpNStatuses = append(nodeIpNStatuses, nodeAndStatus)
+	}
 	return
 }
 
