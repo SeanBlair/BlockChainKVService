@@ -31,6 +31,7 @@ TODO:
 
 -- Client failures
 	Ignore, except if they can cause kvnode to crash. Silently fail??
+	Tested, they do not seem to cause a problem... If a client issues a commit request and then fails, the commit succeeds. This is ok, per piazza @581
 
 
 -- KVnode failures
