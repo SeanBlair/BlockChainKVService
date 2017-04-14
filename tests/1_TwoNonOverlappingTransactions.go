@@ -15,13 +15,13 @@ import (
 )
 func main() {
 	var nodes []string
-	nodes = []string{"198.162.33.28:2222", "198.162.33.46:2222"}
+	nodes = []string{"52.233.45.243:2222", "52.175.29.87:2222", "40.69.195.111:2222", "13.65.91.243:2222", "51.140.126.235:2222", "52.233.190.164:2222"}
 
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
 
-	children := c.GetChildren(nodes[0], "")
-	fmt.Printf("GetChildren returned: %v\n", children) 
+	// children := c.GetChildren(nodes[3], "")
+	// fmt.Printf("GetChildren returned: %x\n", children) 
 
 	t1, err := c.NewTX()
 	fmt.Printf("NewTX returned: %v, %v\n", t1, err)
@@ -35,17 +35,17 @@ func main() {
 	success, txID, err := t1.Commit(0)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
-	// t2, err := c.NewTX()
-	// fmt.Printf("NewTX returned: %v, %v\n", t2, err)
+	t2, err := c.NewTX()
+	fmt.Printf("NewTX returned: %v, %v\n", t2, err)
 
-	// success, err = t2.Put("B", "T2")
-	// fmt.Printf("Put returned: %v, %v\n", success, err)
+	success, err = t2.Put("B", "T2")
+	fmt.Printf("Put returned: %v, %v\n", success, err)
 
-	// success, v, err = t2.Get("B")
-	// fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
+	success, v, err = t2.Get("B")
+	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// success, txID, err = t2.Commit(0)
-	// fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
+	success, txID, err = t2.Commit(3)
+	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	c.Close()
 }
