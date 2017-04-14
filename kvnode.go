@@ -680,6 +680,10 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				mutex.Unlock()	
 			}	
 			addToBlockChain(b)
+			// To allow all other nodes time to receive the same block
+			// this works very well to avoid race condition that results in missing blocks
+			// because other nodes solve the next block before some nodes received the previous
+			time.Sleep(time.Second * 5)
 			isGenerateCommits = true
 			isGenerateNoOps = true
 			} ()
