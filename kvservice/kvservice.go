@@ -207,23 +207,25 @@ func (c *myconn) NewTX() (tx, error) {
 
 func getNewTransactionIDFromAll() (txid int) {
 	newTxResponses := make(map[string]NewTransactionResp)
-	count := 0
+	txChannel := make(chan(NewTransactionResp))
+	nodeChannel := make(chan(string))
 	for _, nodeIpPort := range sortedKvnodeIpPorts {
 		go func(node string) {
-
-			newTx := getNewTransactionID(node)
-			mutex.Lock()
-			newTxResponses[node] = newTx 
-			mutex.Unlock()
-			count++
+			txChannel <- getNewTransactionID(node)
+			nodeChannel <- node
 		}(nodeIpPort)
 	}
+	
+	// TODO support dead kvnodes... 
 	// waits for all to respond
-	// TODO support dead kvnodes...
-	for (count < len(sortedKvnodeIpPorts)) {} 
-	if (count == len(sortedKvnodeIpPorts)) { 
-		fmt.Println("All responded and newTxResponses contains", newTxResponses)
-	} 
+	for i := 0; i < 4; i++ {
+		newTx := <-txChannel
+		node := <-nodeChannel
+		mutex.Lock()
+		newTxResponses[node] = newTx 
+		mutex.Unlock()
+	}
+	fmt.Println("Received all responses and they are:", newTxResponses)
 	// TODO check and resolve different answers
 	for nodeIpP := range newTxResponses {
 		resp := newTxResponses[nodeIpP]
@@ -315,22 +317,26 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 // 
 func commitAll(validateNum int) (success bool, commitID int, err error) {
 	commitResponses := make(map[string]CommitResponse)
-	count := 0
+	commitChan := make(chan(CommitResponse))
+	nodeChan := make(chan(string))
 	for _, nodeIpPort := range sortedKvnodeIpPorts {
 		go func(node string) {
-			commitResp := commit(node, validateNum)
-			mutex.Lock()
-			commitResponses[node] = commitResp
-			mutex.Unlock()
-			count++
+			commitChan <- commit(node, validateNum)
+			nodeChan <- node
 		}(nodeIpPort)
 	}
-	// waits for all to respond
+	
 	// TODO support dead kvnodes...
-	for(count < len(sortedKvnodeIpPorts)) {} 
-	if(count == len(sortedKvnodeIpPorts)) { 
-		fmt.Println("All responded and commitResponses contains", commitResponses)
-	} 
+	// waits for all to respond
+	for i := 0; i < len(sortedKvnodeIpPorts); i++ {
+		commitResp := <-commitChan
+		node := <- nodeChan
+		mutex.Lock()
+		commitResponses[node] = commitResp
+		mutex.Unlock()  
+	}
+	fmt.Println("Received all responses and they are:", commitResponses)
+	
 	// TODO check and resolve different answers
 	for nodeIpP := range commitResponses {
 		resp := commitResponses[nodeIpP]
