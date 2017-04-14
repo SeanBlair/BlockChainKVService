@@ -118,6 +118,7 @@ type Transaction struct {
 	IsCommitted bool
 	CommitID int
 	CommitHash string
+	AllHashes []string 
 }
 
 type NodeIpPortStatus struct {
@@ -707,6 +708,7 @@ func addToBlockChain(block Block) {
 	hBlock := block.HashBlock
 	txid := hBlock.TxID
 	// a Commit transaction
+	// check if already has a hash.
 	if txid > 0 {
 		mutex.Lock()
 		tx := transactions[txid]
@@ -718,8 +720,12 @@ func addToBlockChain(block Block) {
 			mutex.Unlock()
 		}
 		tx.IsCommitted = true
+		// TODO check if shouldn't overwrite tx.CommitHash if exists...
 		tx.CommitHash = block.Hash
 		tx.CommitID = block.Depth
+		hashList := tx.AllHashes
+		hashList = append(hashList, block.Hash)
+		tx.AllHashes = hashList
 		mutex.Lock()
 		transactions[txid] = tx
 		mutex.Unlock()
