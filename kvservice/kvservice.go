@@ -23,8 +23,10 @@ import (
 	"sort"
 	"strings"
 	"math"
+	"math/rand"
 	"strconv"
 	"sync"
+	"time"
 )
 
 
@@ -224,27 +226,45 @@ func getNewTransactionIDFromAll() (txid int) {
 		}(nodeIpPortStatus.IpPort, i)
 	}
 	// waits for all to respond
-	for i := 0; i < len(sortedKvnodeIpPortStatuses); i++ {
+	for _ = range sortedKvnodeIpPortStatuses {
 		newTx := <-txChannel
 		node := <-nodeChannel
 		mutex.Lock()
-		newTxResponses[node] = newTx 
+		newTxResponses[node] = newTx
 		mutex.Unlock()
 	}
 	fmt.Println("Received all responses and they are:", newTxResponses)
 	// TODO check and resolve different answers
 	// currently just randomly returns one from a non-dead node...
+	max := -1
+	min := -1
+	var kvs map[Key]Value
 	for nodeIpP := range newTxResponses {
 		resp := newTxResponses[nodeIpP]
 		if resp.TxID != -1 {
-			fmt.Println("Returning newTx response:", resp, " from node:", nodeIpP)
-			currentTransaction = Transaction{resp.TxID, make(map[Key]Value), make(map[Key]bool), false, false, 0}
-			originalKeyValueStore = resp.KeyValueStore
-			txid = resp.TxID
-			return
+			// If this is first non-err, set min
+			if min == -1 {
+				min = resp.TxID
+			}
+			// Find max, also take their kvs arbitrarily
+			if resp.TxID > max {
+				max = resp.TxID
+				kvs = resp.KeyValueStore
+			}
 		}
 	}
-	return -1
+	// Set it to be max
+	txid = max
+	// If the min and max are not equal, change to int in between
+	if min != max {
+		rand.Seed(time.Now().Unix())
+		innerRange := max - min - 2
+		txid = rand.Intn(innerRange) + min
+		// fmt.Println("New ID =", txid)
+	}
+	currentTransaction = Transaction{txid, make(map[Key]Value), make(map[Key]bool), false, false, 0}
+	originalKeyValueStore = kvs
+	return txid
 }
 
 // Calls KVServer.NewTransaction RPC, returns a unique transaction ID
