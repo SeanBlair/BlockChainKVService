@@ -170,7 +170,7 @@ func main() {
 		"numLeadingZeroes:", numLeadingZeroes, "nodeIpAndStatuses:", nodeIpAndStatuses, "myNodeID:", myNodeID, 
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
-	nextTransactionID = 1
+	nextTransactionID = 10
 	nextCommitID = 10
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
@@ -376,7 +376,7 @@ func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse
 // Adds a Transaction struct to the transactions map, returns a unique transaction ID
 func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 	txID := nextTransactionID
-	nextTransactionID++
+	nextTransactionID = nextTransactionID + 10
 	mutex.Lock()
 	kvStore := keyValueStore
 	mutex.Unlock()
