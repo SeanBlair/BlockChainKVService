@@ -118,6 +118,7 @@ type Transaction struct {
 	IsCommitted bool
 	CommitID int
 	CommitHash string
+	AllHashes []string 
 }
 
 type NodeIpPortStatus struct {
@@ -280,8 +281,8 @@ func generateBlock(block *Block) (bool, string) {
 	hash := sum[:] // Converts from [32]byte to []byte
 	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
-	if isLeadingNumZeroes(hash) {
-	// if isLeadingNumZeroCharacters(hash) {
+	// if isLeadingNumZeroes(hash) {
+	if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
 		addToBlockChain(b)
@@ -311,6 +312,8 @@ func printState () {
 		tx := transactions[txId]
 		mutex.Unlock()
 		fmt.Println("  --Transaction ID:", tx.ID, "IsAborted:", tx.IsAborted, "IsCommitted:", tx.IsCommitted, "CommitId:", tx.CommitID)
+		fmt.Printf("    Hash:%x\n", tx.CommitHash)
+		fmt.Printf("    AllHashes:%x\n", tx.AllHashes)
 		fmt.Println("    PutSet:")
 		for k := range tx.PutSet {
 			fmt.Println("      Key:", k, "Value:", tx.PutSet[k])
@@ -416,15 +419,16 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		} else {
 		// TODO check that it is on longest branch...
 		// else: regenerate on correct branch??
+		isGenerateNoOps = true
+		validateCommit(req)
 		mutex.Lock()
 		commitId := transactions[tx.ID].CommitID
 		mutex.Unlock()
-		isGenerateNoOps = true
-		validateCommit(req, blockHash)
 		*resp = CommitResponse{true, commitId, ""}
 		}	
 	}
 	printState()
+
 	return nil
 }
 
@@ -445,55 +449,35 @@ func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 }
 
 // Waits until the Block with given blockHash has the correct number of descendant Blocks
-// or a sibling Block with the same TxID has the correct number of decendants.
-func validateCommit(req CommitRequest, blockHash string) {
+// check all blocks for validate commit number of descendants. If find one, sets
+// the correct values in the transactions[req.TxID] (CommitHash, CommitID)
+func validateCommit(req CommitRequest) {
 	fmt.Println("In validateCommit()")
 	for {
+		// always refresh the hashes list in case other block for same tx has been added
 		mutex.Lock()
-		block := blockChain[blockHash]
+		tx := transactions[req.Transaction.ID]
 		mutex.Unlock()
-		fmt.Println("Trying to validate a block with ID", block.HashBlock.TxID, "and children:", len(block.ChildrenHashes))
-		if isBlockValidated(block, req.ValidateNum) {
-			return
-		} else {
-			if isATwinBlockValidated(block, req.ValidateNum) {
-				return
-			}
-			time.Sleep(time.Second)
-			fmt.Println("block not yet validated...")
-		}
-	}
-}
-
-func isATwinBlockValidated(block Block, validateNum int) bool {
-	siblingBlock, exists := checkForTwin(block)
-	if exists {
-		if isBlockValidated(siblingBlock, validateNum) {
-			fmt.Println("Found a twin and it was validated!!!! Solved a fork scenario :) :) :)")
-			return true
-		}
-	}
-	return false
-}
-
-func checkForTwin(block Block) (twin Block, exists bool) {
-	mutex.Lock()
-	parentBlock := blockChain[block.HashBlock.ParentHash]
-	mutex.Unlock()
-	for _, siblingHash := range parentBlock.ChildrenHashes {
-		if siblingHash != block.Hash {
+		hashes := tx.AllHashes
+		for _, hash := range hashes {
 			mutex.Lock()
-			siblingBlock := blockChain[siblingHash]
+			block := blockChain[hash]
 			mutex.Unlock()
-			if	siblingBlock.HashBlock.TxID == block.HashBlock.TxID {
-				return siblingBlock, true
-			}
+			fmt.Println("Trying to validate a block with ID", block.HashBlock.TxID, "and children:", len(block.ChildrenHashes))
+			if isBlockValidated(block, req.ValidateNum) {
+				// set the correct commit values for returning to client
+				tx.CommitHash = hash
+				tx.CommitID = block.Depth
+				mutex.Lock()
+				transactions[req.Transaction.ID] = tx
+				mutex.Unlock()
+				return
+			} 
 		}
+		time.Sleep(time.Second)
+		fmt.Println("block not yet validated...")	
 	}
-	exists = false
-	return 
 }
-
 
 // Recursively traverses the longest branch of the blockChain tree starting at the given block,
 // if there are at least validateNum descendents returns true, else returns false  
@@ -531,6 +515,10 @@ func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 				isWorkingOnCommit = false
 				return hash
 			} else if !isCommitPossible(requiredKeyValues) {
+				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
+				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
+				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
+				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
 				isWorkingOnCommit = false
 				return ""
 			} else {
@@ -656,11 +644,11 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	hash := sum[:] // Converts from [32]byte to []byte
 	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
-	*resp = isLeadingNumZeroes(hash)
+	*resp = isLeadingNumZeroCharacters(hash)
 	if(*resp == true) {
 		fmt.Println("Received HashBlock: VERIFIED")
 		// to allow return to caller
-		go func() {	
+		go func(block Block, txid int) {	
 			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
 			// stop generating Commits when we have a new Block in the chain
@@ -673,16 +661,27 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				// This stopped it from hanging... !!!
 				time.Sleep(time.Millisecond)
 			}
-			if hb.TxID > 0 {
-				tx := Transaction{ID: hb.TxID, PutSet: b.PutSet}
+			if txid > 0 {
 				mutex.Lock()
-				transactions[hb.TxID] = tx 
-				mutex.Unlock()	
+				tx, ok := transactions[txid]
+				mutex.Unlock()
+				if !ok {
+					tx = Transaction{ID: txid, PutSet: block.PutSet}					
+					mutex.Lock()
+					transactions[txid] = tx 
+					mutex.Unlock()	
+				}
 			}	
-			addToBlockChain(b)
+			addToBlockChain(block)
+			fmt.Println("Added block:")
+			printBlock(block.Hash)
+			// To allow all other nodes time to receive the same block
+			// this works very well to avoid race condition that results in missing blocks
+			// because other nodes solve the next block before some nodes received the previous
+			time.Sleep(time.Second * 11)
 			isGenerateCommits = true
 			isGenerateNoOps = true
-			} ()
+			} (b, hb.TxID)
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
 		// TODO What to do??
@@ -713,7 +712,9 @@ func addToBlockChain(block Block) {
 		}
 		tx.IsCommitted = true
 		tx.CommitHash = block.Hash
-		tx.CommitID = block.Depth
+		hashList := tx.AllHashes
+		hashList = append(hashList, block.Hash)
+		tx.AllHashes = hashList
 		mutex.Lock()
 		transactions[txid] = tx
 		mutex.Unlock()
@@ -742,8 +743,20 @@ func updateLeafBlocks(block Block) {
 // Adds block.Hash to its parent's ChildrenHashes
 func setParentsNewChild(block Block) {
 	mutex.Lock()
-	parentBlock := blockChain[block.HashBlock.ParentHash]
+	parentBlock, ok := blockChain[block.HashBlock.ParentHash]
 	mutex.Unlock()
+	if !ok {
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("##########         #############       #########")
+		fmt.Println("The following block's parent does not exist in my blockChain!!!!!!!")
+		printBlock(block.Hash)
+	}
 	children := parentBlock.ChildrenHashes
 	children = append(children, block.Hash)
 	parentBlock.ChildrenHashes = children
