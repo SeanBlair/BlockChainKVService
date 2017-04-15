@@ -34,8 +34,6 @@ TODO:
 	
 	0) Since the kvnode does not keep a record of new transactions, (it simply returns the next id), if the nextTransactioID variable increases by say 10 each time, when a client receives inconsistent answers, it could choose one that is in between the min and max of its inconsistent answers. this would ensure that each client has a unique txid which is the only important part. 
 
-	(unneeded if choose 0) 1) For NewTX inconsistent answers, maybe retry? Simply discard TxID and keyValueStore (NewTransactionResponse) and try again? Seems simple. And note that in the above scenario the next call to NewTX would return a consistent answer (unless the same race condition happened again, which is unlikely). (unneeded if choose 0) 
-
 	0.1) For inconsistent keyValueStores on NewTX, more complicated.... Might have to retry... Or choose majority answer...
 
 
@@ -61,14 +59,6 @@ Note: Client failures should not cause inconsistent state at the kvnodes, becaus
 -- Verification that a committed block is on the longest branch.
 	This is very difficult as far as I can tell, and seems to already be provided as a side-effect of the current design. So no need to check/support?? Need to test.
 
-	My isATwinBlockValidated() function in the validateCommit() call fixes the case when there is a fork consisting of the same Commit Block simultaneously solved by 2 nodes and added to the blockChain of at least one of the nodes. One of the two will be chosen (randomly) as the next block to use as a parent, and the other will be on the shortest branch. It is ok to have both in the blockChain as only one of them will be on the longest branch. The problem was that one node would keep checking for validity of the Block not on the longest branch (hanging), while all other nodes would check validity of the Block on the longest branch (responding success). 
-	The fix consisted of, when a node is checking for validity of a Commit Block, it also checks for if there is a sibling block with the same TxID that is validated (on longest branch), and returns from the Commit call with success to the client.
-
-
--- Test on Azure
-	All day Sunday, I tested on the Ugrad servers as my Azure account was inexplicably revoked/suspended. Ivan said it doesn't make sense and he contacted customer support. 
-	I would use at least 4 VM's for the nodes. 
-	Also, I recommend testing at different values for numZeroes. Since they will be testing at the byte level I recommend focusing on testing with numZeroes being multiples of 8. Specifically 16 for the fast case and 24 for the slow case. 32 takes like 5 minutes to solve one, and 8 seems to be ridiculously fast (although it would be interesting to see how the system handles it). For debugging cases, where different periods provide different results, it is convenient to use values other than multiples of 8 to determine what is going on. 
 
 -- Fixing GetChildrenTest to return all the blockChain (instead of just the first child of each node (gets stuck on non-longest branch)). This could be adjusted to verify that a given Commit Block is on the longest branch.
 
