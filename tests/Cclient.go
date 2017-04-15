@@ -11,7 +11,6 @@ import "../kvservice"
 
 import (
 	"fmt"
-	// "time"
 )
 func main() {
 	var nodes []string
@@ -20,20 +19,16 @@ func main() {
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)
 
-	children := c.GetChildren(nodes[0], "parentHash")
-	fmt.Printf("GetChildren returned: %v\n", children) 
-
 	t1, err := c.NewTX()
 	fmt.Printf("NewTX returned: %v, %v\n", t1, err)
 
-	success, err := t1.Put("A", "T1")
+	success, err := t1.Put("A", "3")
 	fmt.Printf("Put returned: %v, %v\n", success, err)
 
 	success, v, err := t1.Get("A")
 	fmt.Printf("Get returned: %v, %v, %v\n", success, v, err)
 
-	// time.Sleep(time.Second * 10)
-	success, txID, err := t1.Commit(1)
+	success, txID, err := t1.Commit(0)
 	fmt.Printf("Commit returned: %v, %v, %v\n", success, txID, err)
 
 	// t2, err := c.NewTX()

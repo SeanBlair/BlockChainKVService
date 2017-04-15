@@ -16,9 +16,9 @@ example: go run kvnode.go 5473be60b466a24872fd7a007c41d1455e9044cca57d433eb51271
 
 [ghash] : SHA 256 hash in hexadecimal of the genesis block for this instantiation of the system.
 [num-zeroes] : required number of leading zeroes in the proof-of-work algorithm, greater or equal to 1.
-[nodesFile] : a file containing one line per node in the key-value service. Each line must be terminated by '\n' 
+[nodesFile] : a file containing one line per node in the key-value service. Each line must be terminated by '\n'
 		and indicates the IP:port that should be used to by this node to connect to the other nodes in the service.
-[nodeID] : an integer between 1 and number of lines in nodesFile. The IP:port on line i of nodesFile is the external 
+[nodeID] : an integer between 1 and number of lines in nodesFile. The IP:port on line i of nodesFile is the external
 		IP:port corresponding to the listen-node-in IP:port, which will be used by other nodes to connect to this node.
 [listen-node-in IP:port] : the IP:port that this node should listen on to receive connections from other nodes.
 [listen-client-in IP:port] : the IP:port that this node should listen on to receive connections from clients.
@@ -29,16 +29,16 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
-    "io/ioutil"
+	"io/ioutil"
 	"log"
+	"math"
 	"net"
 	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
-	"math"
-	"time"
 	"sync"
+	"time"
 )
 
 var (
@@ -46,28 +46,28 @@ var (
 
 	leafBlocks map[string]Block
 
-	numLeadingZeroes int 
+	numLeadingZeroes int
 	// nodeIPs []string
-	nodeIpAndStatuses []NodeIpPortStatus
-	myNodeID int 
+	nodeIpAndStatuses  []NodeIpPortStatus
+	myNodeID           int
 	listenKVNodeIpPort string
 	listenClientIpPort string
 
 	// Transaction ID's are incremented by 1
 	nextTransactionID int
-	
+
 	// Commit ID's are incremented by 10, to allow reordering due to Block-Chain logic
 	nextCommitID int
 
 	// All transactions the system has seen
-	transactions map[int]Transaction 
+	transactions map[int]Transaction
 
-	// Represents the values corresponding to the in-order execution of all the 
+	// Represents the values corresponding to the in-order execution of all the
 	// transactions along the block-chain. Only holds values of commited transactions.
 	keyValueStore map[Key]Value
 
 	// Maps BlockHash to Block
-	blockChain map[string]Block 
+	blockChain map[string]Block
 
 	// true when not generating Commit Blocks
 	isGenerateNoOps bool
@@ -81,7 +81,7 @@ var (
 	// For debugging...
 	// done chan int
 
-	mutex      *sync.Mutex
+	mutex          *sync.Mutex
 	abortedMessage string = "This transaction is aborted!!"
 )
 
@@ -94,35 +94,35 @@ type Value string
 // A block in the blockChain
 type Block struct {
 	// hash of HashBlock field
-	Hash string
+	Hash           string
 	ChildrenHashes []string
-	Depth int
-	PutSet map[Key]Value
-	HashBlock HashBlock
+	Depth          int
+	PutSet         map[Key]Value
+	HashBlock      HashBlock
 }
 
-// The part of a Block that gets hashed (Read only 
+// The part of a Block that gets hashed (Read only
 // except for the Nonce and the ParentHash when computing the hash)
 type HashBlock struct {
 	ParentHash string
-	TxID int
-	NodeID int
-	Nonce uint32
+	TxID       int
+	NodeID     int
+	Nonce      uint32
 }
 
 type Transaction struct {
-	ID int
-	PutSet map[Key]Value
-	KeySet map[Key]bool
-	IsAborted bool
+	ID          int
+	PutSet      map[Key]Value
+	KeySet      map[Key]bool
+	IsAborted   bool
 	IsCommitted bool
-	CommitID int
-	CommitHash string
-	AllHashes []string 
+	CommitID    int
+	CommitHash  string
+	AllHashes   []string
 }
 
 type NodeIpPortStatus struct {
-	IpPort string
+	IpPort  string
 	IsAlive bool
 }
 
@@ -146,13 +146,13 @@ type CommitRequest struct {
 	Transaction Transaction
 	// The original values in keyValueStore of keys that the transaction touched
 	RequiredKeyValues map[Key]Value
-	ValidateNum int
+	ValidateNum       int
 }
 
 type CommitResponse struct {
-	Success bool
+	Success  bool
 	CommitID int
-	Err string
+	Err      string
 }
 
 type GetChildrenRequest struct {
@@ -166,8 +166,8 @@ type GetChildrenResponse struct {
 func main() {
 	err := ParseArguments()
 	checkError("Error in main(), ParseArguments():\n", err, true)
-	fmt.Println("KVNode's command line arguments are:\ngenesisHash:", genesisHash, 
-		"numLeadingZeroes:", numLeadingZeroes, "nodeIpAndStatuses:", nodeIpAndStatuses, "myNodeID:", myNodeID, 
+	fmt.Println("KVNode's command line arguments are:\ngenesisHash:", genesisHash,
+		"numLeadingZeroes:", numLeadingZeroes, "nodeIpAndStatuses:", nodeIpAndStatuses, "myNodeID:", myNodeID,
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
 	nextTransactionID = 10
@@ -218,7 +218,7 @@ func generateNoOpBlock() {
 	if len(leafBlocks) > 1 {
 		fmt.Println("We have a fork!!!!!!!!!!!!!!")
 	}
-	noOpBlock := Block { HashBlock: HashBlock{TxID: 0, NodeID: myNodeID, Nonce: 0}}
+	noOpBlock := Block{HashBlock: HashBlock{TxID: 0, NodeID: myNodeID, Nonce: 0}}
 	noOpBlock = setCorrectParentHashAndDepth(noOpBlock)
 	for isGenerateNoOps {
 		success, _ := generateBlock(&noOpBlock)
@@ -226,7 +226,7 @@ func generateNoOpBlock() {
 			return
 		}
 	}
- 	// received a call to commit or AddBlock which set isGenerateNoOps = false
+	// received a call to commit or AddBlock which set isGenerateNoOps = false
 	return
 }
 
@@ -250,11 +250,11 @@ func setCorrectParentHashAndDepth(block Block) Block {
 		for leafHash := range commitBlocks {
 			parentBlock = commitBlocks[leafHash]
 			break
-		}	
+		}
 	}
 	block.HashBlock.ParentHash = parentBlock.Hash
 	block.Depth = parentBlock.Depth + 1
-	return block 
+	return block
 }
 
 // returns leaf blocks that are Commit blocks (not NoOp blocks)
@@ -272,14 +272,14 @@ func getCommitLeafBlocks() map[string]Block {
 	return commitBlocks
 }
 
-// Hashes the given Block's HashBlock once, if has sufficient leading zeroes, adds it 
+// Hashes the given Block's HashBlock once, if has sufficient leading zeroes, adds it
 // to blockChain, returns true and the hash. Otherwise, increments the Nonce and returns false, ""
 func generateBlock(block *Block) (bool, string) {
 	b := *block
 	data := []byte(fmt.Sprintf("%v", b.HashBlock))
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
-	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
+	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters,
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
 	// if isLeadingNumZeroes(hash) {
 	if isLeadingNumZeroCharacters(hash) {
@@ -297,7 +297,7 @@ func generateBlock(block *Block) (bool, string) {
 }
 
 // For visualizing the current state of a kvnode's keyValueStore and transactions maps
-func printState () {
+func printState() {
 	fmt.Println("\nKVNODE STATE:")
 	fmt.Println("-keyValueStore:")
 	for k := range keyValueStore {
@@ -369,7 +369,7 @@ func (p *KVServer) GetChildren(req GetChildrenRequest, resp *GetChildrenResponse
 	mutex.Lock()
 	parentBlock := blockChain[hash]
 	mutex.Unlock()
-	resp.Children = parentBlock.ChildrenHashes 
+	resp.Children = parentBlock.ChildrenHashes
 	return nil
 }
 
@@ -385,7 +385,7 @@ func (p *KVServer) NewTransaction(req bool, resp *NewTransactionResp) error {
 }
 
 // If the given transaction is aborted returns false, otherwise commits the transaction,
-// and returns its CommitID value, 
+// and returns its CommitID value,
 func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 	fmt.Println("Received a call to Commit(", req, ")")
 	tx := req.Transaction
@@ -417,15 +417,15 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 			*resp = CommitResponse{false, 0, abortedMessage + "Another node committed a conflicting transaction!!"}
 			isGenerateNoOps = true
 		} else {
-		// TODO check that it is on longest branch...
-		// else: regenerate on correct branch??
-		isGenerateNoOps = true
-		validateCommit(req)
-		mutex.Lock()
-		commitId := transactions[tx.ID].CommitID
-		mutex.Unlock()
-		*resp = CommitResponse{true, commitId, ""}
-		}	
+			// TODO check that it is on longest branch...
+			// else: regenerate on correct branch??
+			isGenerateNoOps = true
+			validateCommit(req)
+			mutex.Lock()
+			commitId := transactions[tx.ID].CommitID
+			mutex.Unlock()
+			*resp = CommitResponse{true, commitId, ""}
+		}
 	}
 	printState()
 
@@ -442,7 +442,7 @@ func isCommitPossible(requiredKeyValues map[Key]Value) bool {
 		if ok && val != requiredKeyValues[k] {
 			return false
 		} else if !ok && val != "" {
-			return false	
+			return false
 		}
 	}
 	return true
@@ -472,15 +472,15 @@ func validateCommit(req CommitRequest) {
 				transactions[req.Transaction.ID] = tx
 				mutex.Unlock()
 				return
-			} 
+			}
 		}
 		time.Sleep(time.Second)
-		fmt.Println("block not yet validated...")	
+		fmt.Println("block not yet validated...")
 	}
 }
 
 // Recursively traverses the longest branch of the blockChain tree starting at the given block,
-// if there are at least validateNum descendents returns true, else returns false  
+// if there are at least validateNum descendents returns true, else returns false
 func isBlockValidated(block Block, validateNum int) bool {
 	if validateNum == 0 {
 		return true
@@ -490,7 +490,7 @@ func isBlockValidated(block Block, validateNum int) bool {
 			childBlock := blockChain[child]
 			mutex.Unlock()
 			fmt.Println("The child block has depth:", childBlock.Depth)
-			if isBlockValidated(childBlock, validateNum - 1) {
+			if isBlockValidated(childBlock, validateNum-1) {
 				return true
 			}
 		}
@@ -498,14 +498,14 @@ func isBlockValidated(block Block, validateNum int) bool {
 	}
 }
 
-// Adds a Commit Block with transaction txid to the blockChain, 
+// Adds a Commit Block with transaction txid to the blockChain,
 // or allows AddBlock to add it, returns its hash
 func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 	fmt.Println("Generating a Commit Block...")
 	mutex.Lock()
 	putSet := transactions[txid].PutSet
 	mutex.Unlock()
-	block := Block { PutSet: putSet, HashBlock: HashBlock{TxID: txid, NodeID: myNodeID, Nonce: 0} }	
+	block := Block{PutSet: putSet, HashBlock: HashBlock{TxID: txid, NodeID: myNodeID, Nonce: 0}}
 	for {
 		if isGenerateCommits {
 			isWorkingOnCommit = true
@@ -528,7 +528,7 @@ func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 					isWorkingOnCommit = false
 					if success {
 						return blockHash
-					}					
+					}
 				}
 			}
 		}
@@ -537,12 +537,12 @@ func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 	}
 }
 
-// Returns true and the hash of the Block that corresponds to the 
+// Returns true and the hash of the Block that corresponds to the
 // given txid if commited, false, "" otherwise
 func isBlockInChain(txid int) (bool, string) {
 	mutex.Lock()
 	tx := transactions[txid]
-	mutex.Unlock() 
+	mutex.Unlock()
 	if tx.IsCommitted {
 		return true, tx.CommitHash
 	} else {
@@ -553,7 +553,7 @@ func isBlockInChain(txid int) (bool, string) {
 // Returns true if hash has numLeadingZeroes number of leading '0' characters (0x30)
 // This is the correct implementation provided by the assignment specifications.
 func isLeadingNumZeroCharacters(hash []byte) bool {
-	if (numLeadingZeroes == 0) {
+	if numLeadingZeroes == 0 {
 		return true
 	} else {
 		for i := 0; i < numLeadingZeroes; i++ {
@@ -570,16 +570,16 @@ func isLeadingNumZeroCharacters(hash []byte) bool {
 // Returns true if given hash has the minimum number of leading zeroes.
 // This is incorrect given the assignment specs, but is useful for debugging
 // as it provides more control over different amounts of proof-of-work required.
-// TODO: make sure this is not used in the final code!!  
+// TODO: make sure this is not used in the final code!!
 func isLeadingNumZeroes(hash []byte) bool {
-	if (numLeadingZeroes == 0) {
+	if numLeadingZeroes == 0 {
 		return true
 	} else {
-		i := 0;
+		i := 0
 		numZeroes := numLeadingZeroes
 		for {
 			// numZeroes <= 8, byte at hash[i] will determine validity
-			if numZeroes - 8 <= 0 {
+			if numZeroes-8 <= 0 {
 				break
 			} else {
 				// numZeroes is greater than 8, byte at hash[i] must be zero
@@ -594,7 +594,7 @@ func isLeadingNumZeroes(hash []byte) bool {
 		// returns true if byte at hash[i] has the the minimum number of leading zeroes
 		// if numZeroes is 8: hash[i] < 2^(8-8) == hash[1] < 1 == hash[i] must be (0000 0000)b.
 		// if numZeroes is 1: hash[i] < 2^(8-1) == hash[1] < (1000 0000)b == hash[i] <= (0111 1111)b
-		return float64(hash[i]) < math.Pow(2, float64(8 - numZeroes))
+		return float64(hash[i]) < math.Pow(2, float64(8-numZeroes))
 	}
 }
 
@@ -604,7 +604,7 @@ func broadcastBlock(block Block) {
 
 	for i, node := range nodeIpAndStatuses {
 		id := i + 1
-		if(id == myNodeID) || !node.IsAlive {
+		if (id == myNodeID) || !node.IsAlive {
 			continue
 		} else {
 			fmt.Println(id, node.IpPort)
@@ -621,7 +621,7 @@ func broadcastBlock(block Block) {
 				nodeIpAndStatuses[i].IsAlive = false
 				continue
 			}
-			if(resp == false) {
+			if resp == false {
 				// TODO: Decide what to do when node fails to accept new block
 				fmt.Println(id, node.IpPort, "did not accept the HashBlock!!!!!!")
 			}
@@ -642,13 +642,13 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	data := []byte(fmt.Sprintf("%v", hb))
 	sum := sha256.Sum256(data)
 	hash := sum[:] // Converts from [32]byte to []byte
-	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters, 
+	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters,
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
 	*resp = isLeadingNumZeroCharacters(hash)
-	if(*resp == true) {
+	if *resp == true {
 		fmt.Println("Received HashBlock: VERIFIED")
 		// to allow return to caller
-		go func(block Block, txid int) {	
+		go func(block Block, txid int) {
 			// stop generating noOps when we have a new Block in the block chain...
 			isGenerateNoOps = false
 			// stop generating Commits when we have a new Block in the chain
@@ -666,12 +666,12 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 				tx, ok := transactions[txid]
 				mutex.Unlock()
 				if !ok {
-					tx = Transaction{ID: txid, PutSet: block.PutSet}					
+					tx = Transaction{ID: txid, PutSet: block.PutSet}
 					mutex.Lock()
-					transactions[txid] = tx 
-					mutex.Unlock()	
+					transactions[txid] = tx
+					mutex.Unlock()
 				}
-			}	
+			}
 			addToBlockChain(block)
 			fmt.Println("Added block:")
 			printBlock(block.Hash)
@@ -681,7 +681,7 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 			time.Sleep(time.Second * 11)
 			isGenerateCommits = true
 			isGenerateNoOps = true
-			} (b, hb.TxID)
+		}(b, hb.TxID)
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
 		// TODO What to do??
@@ -735,7 +735,7 @@ func updateLeafBlocks(block Block) {
 		if leafBlock.Depth < block.Depth {
 			mutex.Lock()
 			delete(leafBlocks, leafBlockHash)
-			mutex.Unlock()	
+			mutex.Unlock()
 		}
 	}
 }
@@ -808,8 +808,8 @@ func ParseArguments() (err error) {
 		listenKVNodeIpPort = arguments[4]
 		listenClientIpPort = arguments[5]
 	} else {
-		usage := "Usage: {go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID]" + 
-				 " [listen-node-in IP:port] [listen-client-in IP:port]}"
+		usage := "Usage: {go run kvnode.go [ghash] [num-zeroes] [nodesFile] [nodeID]" +
+			" [listen-node-in IP:port] [listen-client-in IP:port]}"
 		err = fmt.Errorf(usage)
 	}
 	return
@@ -837,5 +837,3 @@ func checkError(msg string, err error, exit bool) {
 		}
 	}
 }
-
-

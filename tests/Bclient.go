@@ -14,7 +14,7 @@ import (
 )
 func main() {
 	var nodes []string
-	nodes = []string{"52.233.40.133:2222"}
+	nodes = []string{"52.233.45.243:2222", "52.175.29.87:2222", "40.69.195.111:2222", "13.65.91.243:2222"}
 
 	c := kvservice.NewConnection(nodes)
 	fmt.Printf("NewConnection returned: %v\n", c)

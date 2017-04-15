@@ -18,39 +18,38 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"net/rpc"
 	"os"
 	"sort"
-	"strings"
-	"math"
-	"math/rand"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-
 var (
 	sortedKvnodeIpPortStatuses []NodeIpPortStatus
-	currentTransaction Transaction
-	originalKeyValueStore map[Key]Value
-	abortedMessage string = "This transaction is aborted!!"
-	mutex      *sync.Mutex
+	currentTransaction         Transaction
+	originalKeyValueStore      map[Key]Value
+	abortedMessage             string = "This transaction is aborted!!"
+	mutex                      *sync.Mutex
 )
 
 type Transaction struct {
 	ID int
 	// For storing this transaction's Puts before it commits.
 	// On commit, they will be added to the keyValueStore
-	PutSet map[Key]Value
-	KeySet map[Key]bool
-	IsAborted bool
+	PutSet      map[Key]Value
+	KeySet      map[Key]bool
+	IsAborted   bool
 	IsCommitted bool
-	CommitID int
+	CommitID    int
 }
 
 type NodeIpPortStatus struct {
-	IpPort string
+	IpPort  string
 	IsAlive bool
 }
 
@@ -129,20 +128,20 @@ type mytx struct {
 
 // RPC structs /////////////////////////////
 type NewTransactionResp struct {
-	TxID int
+	TxID          int
 	KeyValueStore map[Key]Value
 }
 
 type CommitRequest struct {
-	Transaction Transaction
+	Transaction       Transaction
 	RequiredKeyValues map[Key]Value
-	ValidateNum int
+	ValidateNum       int
 }
 
 type CommitResponse struct {
-	Success bool
+	Success  bool
 	CommitID int
-	Err string
+	Err      string
 }
 
 type GetChildrenRequest struct {
@@ -152,8 +151,8 @@ type GetChildrenRequest struct {
 type GetChildrenResponse struct {
 	Children []string
 }
-/////////////////////////////////////////////
 
+/////////////////////////////////////////////
 
 // The 'constructor' for a new logical connection object. This is the
 // only way to create a new connection. Takes a set of k-v service
@@ -198,8 +197,8 @@ func getWeightedSum(ipPort string) (sum int) {
 		intN, err := strconv.Atoi(n)
 		checkError("Error in getSum(), strconv.Atoi()", err, true)
 		// a.b.c.d ==  a * 256^(4-0) + b * 256^(4-1) + c * 256^(4-2) + d * 256^(4-3)
-		// returns a unique number representing each ip address 
-		sum += int(math.Pow(256, float64(4 - i)) * float64(intN))
+		// returns a unique number representing each ip address
+		sum += int(math.Pow(256, float64(4-i)) * float64(intN))
 	}
 	return
 }
@@ -210,15 +209,20 @@ func (c *myconn) NewTX() (tx, error) {
 	mutex = &sync.Mutex{}
 	newTx := new(mytx)
 	newTx.ID = getNewTransactionIDFromAll()
-	return newTx, nil
+	if newTx.ID == -1 {
+		currentTransaction.IsAborted = true
+		return newTx, errors.New("The kvnode system appears to be down...")
+	} else {
+		return newTx, nil
+	}
 }
 
 // Returns a transaction Id by querying all kvnodes.
 // If none alive (impossible according to specs), returns -1
 func getNewTransactionIDFromAll() (txid int) {
 	newTxResponses := make(map[string]NewTransactionResp)
-	txChannel := make(chan(NewTransactionResp))
-	nodeChannel := make(chan(string))
+	txChannel := make(chan (NewTransactionResp))
+	nodeChannel := make(chan (string))
 	for i, nodeIpPortStatus := range sortedKvnodeIpPortStatuses {
 		go func(nodeIP string, index int) {
 			txChannel <- getNewTransactionID(nodeIP, index)
@@ -287,13 +291,13 @@ func getNewTransactionID(ipPort string, index int) (resp NewTransactionResp) {
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return NewTransactionResp{-1, nil}
-	} 
+	}
 	return
 }
 
-// 
+//
 func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
-	// fmt.Printf("kvservice received a call to GetChildren  %s  %x\n", node, parentHash)	
+	// fmt.Printf("kvservice received a call to GetChildren  %s  %x\n", node, parentHash)
 	req := GetChildrenRequest{parentHash}
 	var resp GetChildrenResponse
 	client, err := rpc.Dial("tcp", node)
@@ -331,7 +335,7 @@ func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 		}
 		currentTransaction.KeySet[k] = true
 		printState()
-		return true, val, nil	
+		return true, val, nil
 	}
 }
 
@@ -341,9 +345,9 @@ func (t *mytx) Put(k Key, v Value) (bool, error) {
 	if currentTransaction.IsAborted {
 		return false, errors.New(abortedMessage)
 	} else {
-		currentTransaction.PutSet[k] = v 
+		currentTransaction.PutSet[k] = v
 		currentTransaction.KeySet[k] = true
- 		printState()
+		printState()
 		return true, nil
 	}
 }
@@ -359,17 +363,17 @@ func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
 		if success {
 			currentTransaction.IsCommitted = true
 			currentTransaction.CommitID = commitID
-		}	
+		}
 	}
 	printState()
 	return
 }
 
-// 
+//
 func commitAll(validateNum int) (success bool, commitID int, err error) {
 	commitResponses := make(map[string]CommitResponse)
-	commitChan := make(chan(CommitResponse))
-	nodeChan := make(chan(string))
+	commitChan := make(chan (CommitResponse))
+	nodeChan := make(chan (string))
 	for i, nodeIpPortStatus := range sortedKvnodeIpPortStatuses {
 		go func(node string, index int) {
 			commitChan <- commit(node, validateNum, index)
@@ -379,10 +383,10 @@ func commitAll(validateNum int) (success bool, commitID int, err error) {
 	// waits for all to respond
 	for i := 0; i < len(sortedKvnodeIpPortStatuses); i++ {
 		commitResp := <-commitChan
-		node := <- nodeChan
+		node := <-nodeChan
 		mutex.Lock()
 		commitResponses[node] = commitResp
-		mutex.Unlock()  
+		mutex.Unlock()
 	}
 	fmt.Println("Received all responses and they are:", commitResponses)
 
@@ -423,7 +427,7 @@ func commit(nodeIpPort string, validateNum int, index int) (resp CommitResponse)
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return CommitResponse{false, -1, deadNodeMessage}
 	}
-	return 
+	return
 }
 
 // Creates map of the original values that keys in KeySet had in originalKeyValueStore
@@ -431,7 +435,7 @@ func commit(nodeIpPort string, validateNum int, index int) (resp CommitResponse)
 func getRequiredKeyValues() map[Key]Value {
 	kvMap := make(map[Key]Value)
 	for k := range currentTransaction.KeySet {
-		kvMap[k] = originalKeyValueStore[k]	
+		kvMap[k] = originalKeyValueStore[k]
 	}
 	return kvMap
 }
@@ -440,11 +444,11 @@ func getRequiredKeyValues() map[Key]Value {
 func (t *mytx) Abort() {
 	currentTransaction.IsAborted = true
 	printState()
-	return	
+	return
 }
 
 // For visualizing the current state of kvservice's originalKeyValueStore map and currentTransaction
-func printState () {
+func printState() {
 	// fmt.Println("\nKVSERVICE STATE:")
 	// fmt.Println("-originalKeyValueStore:")
 	// for k := range originalKeyValueStore {
