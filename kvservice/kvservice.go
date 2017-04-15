@@ -158,9 +158,7 @@ type GetChildrenResponse struct {
 // only way to create a new connection. Takes a set of k-v service
 // node ip:port strings.
 func NewConnection(nodes []string) connection {
-	// fmt.Println("kvservice received a call to NewConnection() with nodes:", nodes)
 	setSortedIpPorts(nodes)
-	// fmt.Println("sortedKvnodeIpPortStatuses:", sortedKvnodeIpPortStatuses)
 	c := new(myconn)
 	return c
 }
@@ -205,7 +203,6 @@ func getWeightedSum(ipPort string) (sum int) {
 
 // Initializes a Transaction
 func (c *myconn) NewTX() (tx, error) {
-	// fmt.Println("kvservice received a call to NewTX()")
 	mutex = &sync.Mutex{}
 	newTx := new(mytx)
 	newTx.ID = getNewTransactionIDFromAll()
@@ -238,8 +235,6 @@ func getNewTransactionIDFromAll() (txid int) {
 		mutex.Unlock()
 	}
 	fmt.Println("Received all responses and they are:", newTxResponses)
-	// TODO check and resolve different answers
-	// currently just randomly returns one from a non-dead node...
 	max := -1
 	min := -1
 	var kvs map[Key]Value
@@ -264,7 +259,6 @@ func getNewTransactionIDFromAll() (txid int) {
 		rand.Seed(time.Now().Unix())
 		innerRange := max - min - 2
 		txid = rand.Intn(innerRange) + min
-		// fmt.Println("New ID =", txid)
 	}
 	currentTransaction = Transaction{txid, make(map[Key]Value), make(map[Key]bool), false, false, 0}
 	originalKeyValueStore = kvs
@@ -275,19 +269,16 @@ func getNewTransactionIDFromAll() (txid int) {
 // if the called node is dead, sets its IsAlive = false and returns TxID -1
 func getNewTransactionID(ipPort string, index int) (resp NewTransactionResp) {
 	client, err := rpc.Dial("tcp", ipPort)
-	// checkError("Error in getNewTransactionID(), rpc.Dial():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return NewTransactionResp{-1, nil}
 	}
 	err = client.Call("KVServer.NewTransaction", true, &resp)
-	// checkError("Error in getNewTransactionID(), client.Call():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return NewTransactionResp{-1, nil}
 	}
 	err = client.Close()
-	// checkError("Error in getNewTransactionID(), client.Close():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return NewTransactionResp{-1, nil}
@@ -297,21 +288,17 @@ func getNewTransactionID(ipPort string, index int) (resp NewTransactionResp) {
 
 //
 func (c *myconn) GetChildren(node string, parentHash string) (children []string) {
-	// fmt.Printf("kvservice received a call to GetChildren  %s  %x\n", node, parentHash)
 	req := GetChildrenRequest{parentHash}
 	var resp GetChildrenResponse
 	client, err := rpc.Dial("tcp", node)
-	// checkError("Error in GetChildren(), rpc.Dial():", err, false)
 	if err != nil {
 		return []string{"The provided node is dead!!!"}
 	}
 	err = client.Call("KVServer.GetChildren", req, &resp)
-	// checkError("Error in GetChildren(), client.Call():", err, false)
 	if err != nil {
 		return []string{"The provided node is dead!!!"}
 	}
 	err = client.Close()
-	// checkError("Error in GetChildren(), client.Close():", err, false)
 	if err != nil {
 		return []string{"The provided node is dead!!!"}
 	}
@@ -320,12 +307,10 @@ func (c *myconn) GetChildren(node string, parentHash string) (children []string)
 
 // Stub
 func (c *myconn) Close() {
-	// fmt.Println("kvservice received a call to Close()")
 }
 
 // Returns the Value associated with the given Key
 func (t *mytx) Get(k Key) (success bool, v Value, err error) {
-	// fmt.Println("kvservice received a call to Get(", k, ")")
 	if currentTransaction.IsAborted {
 		return false, "", errors.New(abortedMessage)
 	} else {
@@ -341,7 +326,6 @@ func (t *mytx) Get(k Key) (success bool, v Value, err error) {
 
 // Associates Value v with Key k in the system
 func (t *mytx) Put(k Key, v Value) (bool, error) {
-	// fmt.Println("kvservice received a call to Put(", k, v, ")")
 	if currentTransaction.IsAborted {
 		return false, errors.New(abortedMessage)
 	} else {
@@ -354,7 +338,6 @@ func (t *mytx) Put(k Key, v Value) (bool, error) {
 
 // Commits a transaction
 func (t *mytx) Commit(validateNum int) (success bool, commitID int, err error) {
-	// fmt.Println("kvservice received a call to Commit(", validateNum, ")")
 	mutex = &sync.Mutex{}
 	if currentTransaction.IsAborted {
 		return false, 0, errors.New(abortedMessage)
@@ -390,12 +373,8 @@ func commitAll(validateNum int) (success bool, commitID int, err error) {
 	}
 	fmt.Println("Received all responses and they are:", commitResponses)
 
-	// TODO check and resolve different answers
-	// currently returns the first successful answer...
 	for nodeIpP := range commitResponses {
 		resp := commitResponses[nodeIpP]
-		// TODO don't be so optimistic?
-		// optimistic, if one was successful, nailed it!!
 		if resp.Success {
 			fmt.Println("Returning commit response:", resp, " from node:", nodeIpP)
 			return resp.Success, resp.CommitID, errors.New(resp.Err)
@@ -410,19 +389,16 @@ func commit(nodeIpPort string, validateNum int, index int) (resp CommitResponse)
 	requiredKeyValues := getRequiredKeyValues()
 	req := CommitRequest{currentTransaction, requiredKeyValues, validateNum}
 	client, err := rpc.Dial("tcp", nodeIpPort)
-	// checkError("Error in commit(), rpc.Dial():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return CommitResponse{false, -1, deadNodeMessage}
 	}
 	err = client.Call("KVServer.Commit", req, &resp)
-	// checkError("Error in commit(), client.Call():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return CommitResponse{false, -1, deadNodeMessage}
 	}
 	err = client.Close()
-	// checkError("Error in commit(), client.Close():", err, false)
 	if err != nil {
 		sortedKvnodeIpPortStatuses[index].IsAlive = false
 		return CommitResponse{false, -1, deadNodeMessage}

@@ -43,11 +43,8 @@ import (
 
 var (
 	genesisHash string
-
 	leafBlocks map[string]Block
-
 	numLeadingZeroes int
-	// nodeIPs []string
 	nodeIpAndStatuses  []NodeIpPortStatus
 	myNodeID           int
 	listenKVNodeIpPort string
@@ -55,9 +52,6 @@ var (
 
 	// Transaction ID's are incremented by 1
 	nextTransactionID int
-
-	// Commit ID's are incremented by 10, to allow reordering due to Block-Chain logic
-	nextCommitID int
 
 	// All transactions the system has seen
 	transactions map[int]Transaction
@@ -77,9 +71,6 @@ var (
 	isWorkingOnNoOp bool
 	// true when busy working on commit Block
 	isWorkingOnCommit bool
-
-	// For debugging...
-	// done chan int
 
 	mutex          *sync.Mutex
 	abortedMessage string = "This transaction is aborted!!"
@@ -171,7 +162,6 @@ func main() {
 		"listenKVNodeIpPort:", listenKVNodeIpPort, "listenClientIpPort:", listenClientIpPort)
 
 	nextTransactionID = 10
-	nextCommitID = 10
 	transactions = make(map[int]Transaction)
 	keyValueStore = make(map[Key]Value)
 	blockChain = make(map[string]Block)
@@ -417,8 +407,6 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 			*resp = CommitResponse{false, 0, abortedMessage + "Another node committed a conflicting transaction!!"}
 			isGenerateNoOps = true
 		} else {
-			// TODO check that it is on longest branch...
-			// else: regenerate on correct branch??
 			isGenerateNoOps = true
 			validateCommit(req)
 			mutex.Lock()
@@ -428,7 +416,6 @@ func (p *KVServer) Commit(req CommitRequest, resp *CommitResponse) error {
 		}
 	}
 	printState()
-
 	return nil
 }
 
@@ -515,10 +502,6 @@ func generateCommitBlock(txid int, requiredKeyValues map[Key]Value) string {
 				isWorkingOnCommit = false
 				return hash
 			} else if !isCommitPossible(requiredKeyValues) {
-				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
-				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
-				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
-				fmt.Println("The commit isn't possible, identified a discrepancy with the DB with isCommitPossible()")
 				isWorkingOnCommit = false
 				return ""
 			} else {
@@ -622,7 +605,6 @@ func broadcastBlock(block Block) {
 				continue
 			}
 			if resp == false {
-				// TODO: Decide what to do when node fails to accept new block
 				fmt.Println(id, node.IpPort, "did not accept the HashBlock!!!!!!")
 			}
 			err = client.Close()
@@ -675,16 +657,12 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 			addToBlockChain(block)
 			fmt.Println("Added block:")
 			printBlock(block.Hash)
-			// To allow all other nodes time to receive the same block
-			// this works very well to avoid race condition that results in missing blocks
-			// because other nodes solve the next block before some nodes received the previous
 			time.Sleep(time.Second * 11)
 			isGenerateCommits = true
 			isGenerateNoOps = true
 		}(b, hb.TxID)
 	} else {
 		fmt.Println("Received HashBlock: FAILED VERIFICATION")
-		// TODO What to do??
 	}
 	return nil
 }
@@ -719,7 +697,6 @@ func addToBlockChain(block Block) {
 		transactions[txid] = tx
 		mutex.Unlock()
 	}
-	// TODO if a commit block, ensure that it is on the longest chain. ??
 }
 
 // Adds block to leafBlocks and remove blocks with lesser depth than block
@@ -746,16 +723,6 @@ func setParentsNewChild(block Block) {
 	parentBlock, ok := blockChain[block.HashBlock.ParentHash]
 	mutex.Unlock()
 	if !ok {
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("##########         #############       #########")
-		fmt.Println("The following block's parent does not exist in my blockChain!!!!!!!")
-		printBlock(block.Hash)
 	}
 	children := parentBlock.ChildrenHashes
 	children = append(children, block.Hash)
