@@ -12,28 +12,37 @@ import "../kvservice"
 import (
 	"fmt"
 )
+var count [2]int
+
 func main() {
 	var nodes []string
-	nodes = []string{"52.233.45.243:2222", "52.175.29.87:2222", "40.69.195.111:2222", "13.65.91.243:2222", "51.140.126.235:2222", "52.233.190.164:2222"}
-
-	c := kvservice.NewConnection(nodes)
-	fmt.Printf("NewConnection returned: %v\n", c)
-
-	isChild := true
-	parent := ""
-	count := 1
-	for isChild {
-		kids := c.GetChildren(nodes[0], parent)
-		fmt.Printf("GetChildren returned: %s\n", kids)		
-		if len(kids) > 0 {
-			parent = kids[0]
-			count++		
-		} else {
-			isChild = false
-		}	
+	nodes = []string{"52.187.214.143:2222", "52.233.32.107:2222"}
+	for index, _ := range count{
+		count[index] = 0
 	}
-	fmt.Println("Test found", count, "children")
-	fmt.Println("Note: this test sucks, it only returns the first child of each parent....")
+	for i := range nodes {
+		iterateThroughChildren(nodes, "", i)
+		fmt.Println("Node", i, "Tree length=", count[i])
+	}
 
-	c.Close()
 }
+
+func iterateThroughChildren(nodes []string, parentHash string, i int) {
+	c := kvservice.NewConnection(nodes)
+	// fmt.Printf("NewConnection returned: %v\n", c)
+
+	kids := c.GetChildren(nodes[i], parentHash)
+	fmt.Printf("GetChildren returned: %s\n", kids)
+	c.Close()
+	if len(kids) > 0 {
+		for j := range kids {
+			iterateThroughChildren(nodes, kids[j], i)
+		}
+		count[i] = count[i] + 1
+	} else {
+		fmt.Println("leaf")
+		count[i] = count[i] + 1
+		return
+	}
+}
+
