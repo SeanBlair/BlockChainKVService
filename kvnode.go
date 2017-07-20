@@ -271,8 +271,8 @@ func generateBlock(block *Block) (bool, string) {
 	hash := sum[:] // Converts from [32]byte to []byte
 	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters,
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
-	// if isLeadingNumZeroes(hash) {
-	if isLeadingNumZeroCharacters(hash) {
+	if isLeadingNumZeroes(hash) {
+	// if isLeadingNumZeroCharacters(hash) {
 		hashString := string(hash)
 		b.Hash = hashString
 		addToBlockChain(b)
@@ -626,7 +626,8 @@ func (p *KVNode) AddBlock(req AddBlockRequest, resp *bool) error {
 	hash := sum[:] // Converts from [32]byte to []byte
 	// TODO: make sure to turn in with call to isLeadingNumZeroCharacters,
 	// not with call to isLeadingNumZeroes (which is used for finer control of block generation)
-	*resp = isLeadingNumZeroCharacters(hash)
+	// *resp = isLeadingNumZeroCharacters(hash)
+	*resp = isLeadingNumZeroes(hash)
 	if *resp == true {
 		fmt.Println("Received HashBlock: VERIFIED")
 		// to allow return to caller
